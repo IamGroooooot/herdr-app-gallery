@@ -1,6 +1,6 @@
 node_modules/
 gpui-kit.d.ts
-!token-usage/mods/token-usage/icons/
-!token-usage/mods/token-usage/icons/*.svg
-!token-usage-mod/mods/token-usage/icons/
-!token-usage-mod/mods/token-usage/icons/*.svg
+!minimal-token-usage/mods/minimal-token-usage/icons/
+!minimal-token-usage/mods/minimal-token-usage/icons/*.svg
+!minimal-token-usage-mod/mods/minimal-token-usage/icons/
+!minimal-token-usage-mod/mods/minimal-token-usage/icons/*.svg

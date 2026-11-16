@@ -1,0 +1,31 @@
+name: minimal-token-usage
+
+on:
+  push:
+    branches: [main]
+    paths: ['minimal-token-usage/**', 'minimal-token-usage-mod/**', '.github/workflows/minimal-token-usage.yml']
+  pull_request:
+    paths: ['minimal-token-usage/**', 'minimal-token-usage-mod/**', '.github/workflows/minimal-token-usage.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: minimal-token-usage/mods/minimal-token-usage
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      # The committed JS is what runs here: type-checking and rebuilding need Herdr's own type definitions.
+      - run: node --test tests/*.test.js ../../tests/*.test.js
+      - run: npm run lint
