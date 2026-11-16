@@ -2,8 +2,6 @@
 
 Claude Code and Codex usage in a compact Herdr sidebar, with one settings window.
 
-![token-usage running in Herdr](preview.png)
-
 A personal fork of PostHog's [Claude usage recipe](https://github.com/PostHog/herdr/blob/main/claude-usage/RECIPE.md), shared under its [MIT license](LICENSE).
 
 ## What you see

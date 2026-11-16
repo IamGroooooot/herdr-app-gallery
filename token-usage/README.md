@@ -1,14 +1,12 @@
 # token-usage
 
-See Claude Code and Codex usage at a glance in [Herdr](https://herdr.dev), with remaining allowance and reset times in one compact panel.
+See Claude Code and Codex usage at a glance in [Herdr](https://herdr.dev). Remaining allowance and reset times, side by side.
 
-![Claude Code and Codex remaining allowance and reset times in Herdr](preview.png)
-
-A personal fork of PostHog's [Claude usage](https://github.com/PostHog/herdr/blob/main/claude-usage/RECIPE.md).
+![Claude Code and Codex usage in Herdr](preview.png)
 
 ## Install
 
-Requires macOS or Linux, Herdr, Python 3, and signed-in Claude Code / Codex CLIs for the accounts you use.
+Requires Herdr, Python 3, and signed-in Claude Code or Codex CLIs on macOS or Linux.
 
 ```sh
 git clone https://github.com/IamGroooooot/herdr-app-gallery.git
@@ -17,8 +15,10 @@ python3 install.py
 herdr-app do layout.switch --name token-usage
 ```
 
-In **Usage settings → Claude account**, choose **Connect**. Codex needs no connection setup. Limits update after replies; these are local snapshots.
+Open **Usage settings → Claude account → Connect** for Claude Code. Codex needs no connection setup. Limits refresh after replies.
 
-From `herdr-app-gallery/token-usage`, update with `git pull`, then `python3 install.py --replace` (backs up existing files).
+To update, run `git pull` and `python3 install.py --replace` from the same folder. Existing files are backed up.
 
-To use the mod in your existing layout, follow [RECIPE.md](RECIPE.md). [Development](DEVELOPMENT.md).
+[Use your own layout](RECIPE.md) · [Development](DEVELOPMENT.md)
+
+A personal fork of PostHog's [Claude usage](https://github.com/PostHog/herdr/blob/main/claude-usage/RECIPE.md), shared under its [MIT license](LICENSE).
