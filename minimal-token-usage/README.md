@@ -28,9 +28,13 @@ The numbers refresh after each Claude Code or Codex reply.
 
 The layout installs as `Token-usage` and the mod as `minimal-token-usage`. To add only the panel to your own layout, see the [mod](../minimal-token-usage-mod/RECIPE.md). The [recipe](RECIPE.md) describes the layout in full.
 
-## Appearance
+## Settings
 
-Open **Usage settings → Usage → Appearance**. A choice applies at once, and the limits at the top of that page show the result.
+Click the panel to open **Usage settings**. A choice applies at once, and the limits at the top of the page show the result.
+
+<img src="images/settings-usage.png" width="640" alt="Usage settings: remaining limits, Claude alerts, Appearance and Claude sessions">
+
+**Alerts.** Herdr notifies you when a Claude limit is used up to the Warn level, and again at the Urgent level. The Urgent alert can play a sound.
 
 **Bars.** How remaining allowance is drawn.
 

@@ -16,6 +16,7 @@ const PLANS = {
 };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const prefs = () => readPrefs(shared(PREFS_KEY));
+const savePrefs = (patch) => setShared(PREFS_KEY, { ...prefs(), ...patch });
 const ownTheme = () => ownColors(themes(), prefs().theme);
 const palette = () => ({ ...theme(), ...ownTheme() });
 function ago(ms) {
@@ -189,7 +190,8 @@ export default class ClaudeUsage extends View {
             closeOverlay(this.overlay);
     }
     openSettings(page) {
-        openOverlay({ mod: 'minimal-token-usage', kind: 'dialog', width: 720, height: 560, props: { page } });
+        // A share of the window: a height in px taller than the window is cut off at the top.
+        openOverlay({ mod: 'minimal-token-usage', kind: 'dialog', width: 760, height: 0.8, props: { page } });
     }
     ask(action, title, detail) {
         this.pendingAction = action;
@@ -679,21 +681,105 @@ export default class ClaudeUsage extends View {
             .children(swatch.map(color => div().w(9).h(9).rounded(5).flex_none().bg(color).border_1().border_color(t.input)))
             .child(label);
     }
-    appearanceSection(t, set) {
-        const { style, theme: picked } = prefs();
-        const current = ownTheme() ? picked : null;
-        const row = (label, picks) => h_flex()
+    settingRow(t, label, controls) {
+        return h_flex()
             .gap(12)
             .items_start()
-            .child(div().w(52).flex_none().pt(6).text_size(12).text_color(t.muted).child(label))
-            .child(h_flex().flex_1().min_w(0).gap(6).flex_wrap().children(picks));
+            .child(div().w(64).flex_none().pt(6).text_size(12).text_color(t.muted).child(label))
+            .child(h_flex().flex_1().min_w(0).gap(6).items_center().flex_wrap().children(controls));
+    }
+    /** One control: minus, the value, plus. A side that cannot go further is dimmed and does nothing. */
+    stepper(t, id, value, min, max, change) {
+        const side = (name, glyph, next) => div()
+            .id(`${id}-${name}`)
+            .px(10)
+            .py(5)
+            .text_color(next === value ? t.input : t.foreground)
+            .when(next !== value, el => el
+            .cursor_pointer()
+            .hover(s => s.bg(t.selected))
+            .on_click((_e, cx) => {
+            cx.stop_propagation();
+            change(next);
+        }))
+            .child(glyph);
+        return h_flex()
+            .flex_none()
+            .items_center()
+            .rounded(6)
+            .border_1()
+            .border_color(t.input)
+            .bg(t.raised)
+            .overflow_hidden()
+            .text_size(12.5)
+            .font_medium()
+            .child(side('down', '\u2212', Math.max(min, value - 5)))
+            .child(div().w(44).text_center().child(`${value}%`))
+            .child(side('up', '+', Math.min(max, value + 5)));
+    }
+    toggle(t, id, on, label, flip) {
+        return h_flex()
+            .id(id)
+            .gap(8)
+            .py(4)
+            .items_center()
+            .cursor_pointer()
+            .on_click((_e, cx) => {
+            cx.stop_propagation();
+            flip();
+        })
+            .child(h_flex()
+            .w(30)
+            .h(18)
+            .p(2)
+            .flex_none()
+            .rounded(9)
+            .bg(on ? t.accent : t.input)
+            .when(on, el => el.justify_end())
+            .child(div()
+            .w(14)
+            .h(14)
+            .rounded(7)
+            .bg(on ? t.background : t.muted)))
+            .child(div()
+            .text_size(12.5)
+            .text_color(on ? t.foreground : t.muted)
+            .child(label));
+    }
+    alertsSection(t) {
+        const { warn, urgent, sound } = prefs();
+        const used = (color) => h_flex()
+            .gap(6)
+            .pl(4)
+            .items_center()
+            .text_size(12)
+            .text_color(t.muted)
+            .child(div().w(8).h(8).rounded(4).flex_none().bg(color))
+            .child('used');
+        return v_flex()
+            .gap(10)
+            .child(this.heading(t, 'Claude alerts'))
+            .child(this.settingRow(t, 'Warn at', [
+            this.stepper(t, 'cu-warn', warn, 50, urgent - 5, value => savePrefs({ warn: value })),
+            used(t.working),
+        ]))
+            .child(this.settingRow(t, 'Urgent at', [
+            this.stepper(t, 'cu-urgent', urgent, warn + 5, 100, value => savePrefs({ urgent: value })),
+            used(t.blocked),
+            div().w(10),
+            this.toggle(t, 'cu-sound', sound, 'with a sound', () => savePrefs({ sound: !sound })),
+        ]));
+    }
+    appearanceSection(t) {
+        const { style, theme: picked } = prefs();
+        const current = ownTheme() ? picked : null;
         return v_flex()
             .gap(10)
             .child(this.heading(t, 'Appearance'))
-            .child(row('Bars', STRIP_STYLES.map(s => this.choice(t, `cu-style-${s.id}`, s.label, s.id === style, () => set({ style: s.id })))))
-            .child(row('Colors', [
-            this.choice(t, 'cu-theme-app', 'Same as Herdr', current === null, () => set({ theme: null })),
-            ...themes().map(x => this.choice(t, `cu-theme-${x.name}`, x.name, x.name === current, () => set({ theme: x.name }), [
+            .child(this.settingRow(t, 'Bars', STRIP_STYLES.map(s => this.choice(t, `cu-style-${s.id}`, s.label, s.id === style, () => savePrefs({ style: s.id })))))
+            .child(this.settingRow(t, 'Colors', [
+            this.choice(t, 'cu-theme-app', 'Same as Herdr', current === null, () => savePrefs({ theme: null })),
+            ...themes().map(x => this.choice(t, `cu-theme-${x.name}`, x.name, x.name === current, () => savePrefs({ theme: x.name }), [
                 x.colors.chrome,
                 x.colors.accent,
             ])),
@@ -750,15 +836,6 @@ export default class ClaudeUsage extends View {
             .child(div().w(132).flex_none().text_right().child(count(r.input)))
             .child(div().w(80).flex_none().text_right().child(count(r.cacheRead))));
         const empty = this.rows == null ? 'Reading transcripts.' : 'No Claude Code sessions in Herdr on this computer.';
-        const { warn, urgent, sound } = prefs();
-        const set = (patch) => setShared(PREFS_KEY, { ...prefs(), ...patch });
-        const stepper = (id, label, value, min, max, key) => h_flex()
-            .gap(8)
-            .items_center()
-            .child(label)
-            .child(this.button(t, `${id}-down`, '-', () => set({ [key]: Math.max(min, value - 5) })))
-            .child(div().w(40).text_right().child(`${value}%`))
-            .child(this.button(t, `${id}-up`, '+', () => set({ [key]: Math.min(max, value + 5) })));
         return [
             this.usageOverview(t, this.providers(), true),
             ...(['unlinked', 'signedout'].includes(this.providers()[0].status)
@@ -768,45 +845,29 @@ export default class ClaudeUsage extends View {
                         : this.startClaude('Claude login', ['claude', 'auth', 'login']), true)),
                 ]
                 : []),
-            this.appearanceSection(t, set),
+            this.alertsSection(t),
+            this.appearanceSection(t),
+            // Last, and the only part that scrolls: the rest of the page stays in view however many sessions there are.
             v_flex()
+                .flex_1()
                 .gap(4)
-                .child(this.heading(t, 'Claude sessions on this computer'))
-                .when(Boolean(rows.length), el => el.child(v_flex().pt(6).child(head).children(rows)))
+                .child(h_flex()
+                .gap(12)
+                .items_center()
+                .child(div().flex_1().child(this.heading(t, 'Claude sessions on this computer')))
+                .when(Boolean(rows.length), el => el.child(div().text_size(11).text_color(t.muted).child('Subagents included. Click a row to open its tab.'))))
+                .when(Boolean(rows.length), el => el.child(div().pt(6).child(head)).child(v_flex()
+                .id('cu-sessions')
+                .flex_1()
+                .min_h(Math.min(rows.length, 3) * 34)
+                .overflow_y_scrollbar()
+                .children(rows)))
                 .when(!rows.length && !this.rowsError, el => el.child(div().py(8).text_size(12).text_color(t.muted).child(empty)))
                 .when(Boolean(this.rowsError), el => el.child(div()
                 .py(8)
                 .text_size(12)
                 .text_color(t.blocked)
-                .child(this.rowsError ?? '')))
-                .when(Boolean(rows.length), el => el.child(div()
-                .pt(6)
-                .text_size(12)
-                .text_color(t.muted)
-                .child('Transcript totals include subagents. Select a session to open its tab.'))),
-            v_flex()
-                .gap(10)
-                .child(this.heading(t, 'Claude alerts'))
-                .child(h_flex()
-                .gap(20)
-                .items_center()
-                .flex_wrap()
-                .child(stepper('cu-warn', 'Warn at', warn, 50, urgent - 5, 'warn'))
-                .child(stepper('cu-urgent', 'Urgent at', urgent, warn + 5, 100, 'urgent'))
-                .child(h_flex()
-                .id('cu-sound')
-                .gap(8)
-                .items_center()
-                .cursor_pointer()
-                .on_click(() => set({ sound: !sound }))
-                .child(div()
-                .w(14)
-                .h(14)
-                .rounded(3)
-                .border_1()
-                .border_color(t.input)
-                .when(sound, el => el.bg(t.accent)))
-                .child('Sound when urgent'))),
+                .child(this.rowsError ?? ''))),
         ];
     }
     connectionSection(t) {

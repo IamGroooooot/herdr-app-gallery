@@ -28,7 +28,7 @@ for (const shell of shells) {
     mkdirSync(config);
     writeFileSync(
       join(bin, 'herdr-app'),
-      '#!/bin/sh\n[ "$1" = check ] && [ -f "$2/main.js" ] && exit "${CHECK_EXIT:-0}"\nexit 9\n',
+      '#!/bin/sh\n[ "$1" = check ] && [ -f "$2/main.js" ] && echo "$2" >>"$HOME/checked" && exit "${CHECK_EXIT:-0}"\nexit 9\n',
     );
     chmodSync(join(bin, 'herdr-app'), 0o755);
     const run = (args, env = {}) =>
@@ -37,13 +37,16 @@ for (const shell of shells) {
         env: { PATH: `${bin}:/usr/bin:/bin`, HOME: root, ...env },
       });
     const install = (args = [], env = {}) => run(['--config', config, ...args], env);
-    return { root, config, mod: join(config, 'mods/minimal-token-usage'), install, run };
+    const checked = () => readFileSync(join(root, 'checked'), 'utf8').trim().split('\n');
+    return { root, config, mod: join(config, 'mods/minimal-token-usage'), install, run, checked };
   };
 
   test(`${shell}: installs only what Herdr runs, refuses to overwrite, and backs up on --replace`, t => {
-    const { config, mod, install } = setup(t);
+    const { config, mod, install, checked } = setup(t);
     writeFileSync(join(config, 'settings.json'), '{"zoom":1.2}');
     assert.equal(install().status, 0);
+    // Herdr 0.1.16: a panel whose installed folder was checked before its first use never refreshes.
+    assert.deepEqual(checked(), [fileURLToPath(new URL('../mods/minimal-token-usage', import.meta.url))]);
     assert.deepEqual(
       readdirSync(mod)
         .filter(name => !name.endsWith('.js'))

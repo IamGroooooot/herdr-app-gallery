@@ -28,9 +28,13 @@ herdr-app do layout.switch --name Token-usage
 
 layout은 `Token-usage`, mod는 `minimal-token-usage`라는 이름으로 설치됩니다. 쓰던 layout에 패널만 넣으려면 [mod](../minimal-token-usage-mod/RECIPE.md)를 보세요. layout 전체 설명은 [recipe](RECIPE.md)에 있습니다.
 
-## 모양
+## 설정
 
-**Usage settings → Usage → Appearance**를 엽니다. 고르면 바로 적용되며, 같은 화면 위쪽의 사용량 표시에 결과가 나타납니다.
+패널을 클릭하면 **Usage settings**가 열립니다. 고르면 바로 적용되며, 같은 화면 위쪽의 사용량 표시에 결과가 나타납니다.
+
+<img src="images/settings-usage.png" width="640" alt="Usage settings: 남은 사용량, Claude alerts, Appearance, Claude 세션">
+
+**Alerts.** Claude 사용량이 Warn 기준에 닿으면 Herdr가 알림을 띄우고, Urgent 기준에 닿으면 한 번 더 알립니다. Urgent 알림에는 소리를 켤 수 있습니다.
 
 **Bars.** 남은 사용량을 그리는 방식입니다.
 
