@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "lib": [
+      "ES2022"
+    ],
+    "strict": true,
+    "strictNullChecks": false,
+    "noEmitOnError": true,
+    "skipLibCheck": true,
+    "rootDir": "src",
+    "outDir": "."
+  },
+  "include": [
+    "src/**/*.ts",
+    "gpui-kit.d.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

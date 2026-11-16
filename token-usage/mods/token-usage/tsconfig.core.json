@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strictNullChecks": true,
+    "noEmit": true
+  },
+  "include": [
+    "src/types.ts",
+    "src/resource.ts",
+    "src/providers.ts",
+    "src/usage-model.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
