@@ -2,7 +2,7 @@
 
 See Claude Code and Codex usage at a glance in [Herdr](https://herdr.dev). Remaining allowance and reset times, side by side.
 
-![Claude Code and Codex usage in Herdr](token-usage-preview.png)
+![Claude Code and Codex usage in Herdr](preview.png)
 
 ## Install
 
