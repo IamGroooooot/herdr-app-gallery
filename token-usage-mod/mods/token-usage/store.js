@@ -40,7 +40,7 @@ export class UsageStore {
         this.accounts = { claude: account('claude'), codex: account('codex') };
         this.connection = new Resource(async () => {
             const result = await io.connection(this.accounts.claude.value);
-            if (result.error)
+            if (result.error !== undefined)
                 throw new Error(result.error);
             return result;
         }, clock, changed);

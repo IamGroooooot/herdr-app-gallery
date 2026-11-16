@@ -1,8 +1,8 @@
 import { Resource } from './resource.js';
-import type { AccountState, Connection, ProviderId, UsageProvider, UsageReport } from './types.js';
+import type { AccountState, Connection, ConnectionResult, ProviderId, UsageProvider, UsageReport } from './types.js';
 
 export interface StoreIO {
-  connection(account: AccountState | null): Promise<Connection>;
+  connection(account: AccountState | null): Promise<ConnectionResult>;
   accountChanged(): Promise<void>;
   claudeIdentity?: { read(): string | null; write(identity: string): void };
 }
@@ -50,7 +50,7 @@ export class UsageStore {
     this.connection = new Resource(
       async () => {
         const result = await io.connection(this.accounts.claude.value);
-        if (result.error) throw new Error(result.error);
+        if (result.error !== undefined) throw new Error(result.error);
         return result;
       },
       clock,

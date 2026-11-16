@@ -1,5 +1,5 @@
 // Generated from src/usage-model.ts. Edit the TS source, then run npm run verify.
-export { periodLabel } from './providers.js';
+import { finite, object } from './json.js';
 export function usageProviders(inputs, now = Date.now()) {
     return inputs.map(({ provider, account, usage, connection }) => {
         const error = account.error || usage.error || connection?.error || null;
@@ -60,6 +60,19 @@ export const STRIP_STYLES = [
 export const stripStyle = (value) => STRIP_STYLES.find(s => s.id === value)?.id ?? 'gauge';
 export function ownColors(all, name) {
     return (name && all.find(theme => theme.name === name)?.colors) || null;
+}
+export const PREFS_KEY = 'token-usage.prefs';
+/** `saved` is whatever Herdr's shared state holds; anything that is not a valid choice takes its default. */
+export function readPrefs(saved) {
+    const s = object(saved) ?? {};
+    const percent = (value, fallback) => finite(value) && value >= 0 && value <= 100 ? value : fallback;
+    return {
+        warn: percent(s.warn, 80),
+        urgent: percent(s.urgent, 95),
+        sound: typeof s.sound === 'boolean' ? s.sound : true,
+        style: stripStyle(s.style),
+        theme: typeof s.theme === 'string' ? s.theme : null,
+    };
 }
 /** Strip geometry in px. The strip asks its layout block for the height its rows need, plus
  *  `slack` so that rounding or a block border never leaves a pixel to scroll.

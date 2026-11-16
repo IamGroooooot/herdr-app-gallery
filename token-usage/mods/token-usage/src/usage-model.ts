@@ -1,7 +1,7 @@
+import { finite, object } from './json.js';
 import type { ReadState } from './resource.js';
-import type { AccountState, Connection, DisplayProvider, UsageProvider, UsageReport } from './types.js';
+import type { AccountState, Connection, DisplayProvider, Prefs, UsageProvider, UsageReport } from './types.js';
 
-export { periodLabel } from './providers.js';
 export interface ProviderDisplayInput {
   provider: Pick<UsageProvider, 'id' | 'name'>;
   account: ReadState<AccountState>;
@@ -67,6 +67,21 @@ export function ownColors(
   name: string | null,
 ): Record<string, string> | null {
   return (name && all.find(theme => theme.name === name)?.colors) || null;
+}
+
+export const PREFS_KEY = 'token-usage.prefs';
+/** `saved` is whatever Herdr's shared state holds; anything that is not a valid choice takes its default. */
+export function readPrefs(saved: unknown): Prefs {
+  const s = object(saved) ?? {};
+  const percent = (value: unknown, fallback: number) =>
+    finite(value) && value >= 0 && value <= 100 ? value : fallback;
+  return {
+    warn: percent(s.warn, 80),
+    urgent: percent(s.urgent, 95),
+    sound: typeof s.sound === 'boolean' ? s.sound : true,
+    style: stripStyle(s.style),
+    theme: typeof s.theme === 'string' ? s.theme : null,
+  };
 }
 /** Strip geometry in px. The strip asks its layout block for the height its rows need, plus
  *  `slack` so that rounding or a block border never leaves a pixel to scroll.

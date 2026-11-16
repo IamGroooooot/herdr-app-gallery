@@ -4,7 +4,7 @@ const DAYS = 8;
 const LOGS = 24;
 const TAIL_BYTES = 2 * 1024 * 1024;
 const TAIL_LINES = 32;
-// `dd` seeks; whether `tail -c +N` does depends on the implementation. `dd` skips whole
+// `dd` seeks; busybox `tail -c +N` reads the file from its start. `dd` skips whole
 // blocks, so `from` seeks to the block holding the byte offset and drops the bytes before it.
 const BLOCK = 65536;
 const FROM = `from() { dd if="$1" bs=${BLOCK} skip="$(($2 / ${BLOCK}))" 2>/dev/null | tail -c +"$(($2 % ${BLOCK} + 1))"; }`;
@@ -86,7 +86,7 @@ const PS_CODEX_TAILS = [
     `  [Text.Encoding]::UTF8.GetString($b).Split([char]10) | Where-Object {$_.StartsWith('{') -and $_.Contains($needle)} | Select-Object -Last ${TAIL_LINES} | ForEach-Object {W($_.TrimEnd([char]13)+[char]10)}}`,
 ].join(' ');
 const PS_CLAUDE_CONFIG_DIR = "$v=[Environment]::GetEnvironmentVariable('CLAUDE_CONFIG_DIR'); if($v){W($v)}";
-export function parseSizes(stdout, files) {
+function parseSizes(stdout, files) {
     const out = new Map();
     for (const line of stdout.split('\n')) {
         const m = /^\s*(\d+)\s+(.+?)\r?$/.exec(line);
@@ -95,13 +95,13 @@ export function parseSizes(stdout, files) {
     }
     return out;
 }
-export function parseChunk(stdout) {
+function parseChunk(stdout) {
     const cut = stdout.indexOf('\n');
     if (cut < 1 || !/^\d+$/.test(stdout.slice(0, cut)))
         return null;
     return { size: Number(stdout.slice(0, cut)), body: stdout.slice(cut + 1) };
 }
-export function parseTails(stdout) {
+function parseTails(stdout) {
     const tails = [];
     let failures = 0;
     let lines = null;

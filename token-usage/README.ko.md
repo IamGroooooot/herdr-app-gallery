@@ -61,7 +61,7 @@ npm run verify
 
 - shell은 `src/system.ts`에서만 실행합니다. Herdr의 mod runtime에 없는 기능인 파일 크기 조회, 파일 일부만 읽기, 수정 시각순 정렬, 환경 변수 읽기마다 명령을 하나씩 둡니다. 각 명령은 POSIX sh와 표준 유틸리티만 쓰고, 같은 일을 하는 PowerShell 명령이 따로 있습니다. parsing은 TypeScript에서 합니다.
 - 패널이 그리는 내용을 바꿨다면 `herdr-app shot`으로 실행 중인 앱을 보고 `herdr-app status`를 확인합니다.
-- Linux는 container에서 busybox와 GNU 두 환경으로 확인합니다.
+- push할 때마다 GitHub Actions가 Linux와 macOS에서 테스트와 lint를 실행합니다. busybox 환경은 container로 확인합니다.
 
 ```sh
 for image in node:22-alpine node:22-slim; do

@@ -2,19 +2,13 @@ import * as fs from 'fs/promises';
 import { appHome, exec, hc, home, readTextFile, writeTextFile } from 'herdr';
 import { decodeReports } from './reports.js';
 import { createSystem } from './system.js';
-import type { ClaudeAuth, ClaudeLimits, Connection, Tokens } from './types.js';
+import type { ClaudeAuth, ClaudeLimits, ConnectionResult, Tokens } from './types.js';
 
 export const system = createSystem(exec, process.platform);
 
 export const dataDir = () => `${appHome()}/data/token-usage`;
 export const tapPath = () => `${appHome()}/mods/token-usage/tap.sh`;
 const CHUNK = 4 * 1024 * 1024;
-
-export const WINDOWS = [
-  { key: 'five_hour', label: '5h', long: '5 hours', title: '5-hour Claude limit' },
-  { key: 'seven_day', label: 'week', long: 'Week', title: 'Weekly Claude limit' },
-  { key: 'spend_limit', label: 'spend', long: 'Spend', title: 'Claude spend limit' },
-];
 
 const parse = (text: string | null) => {
   if (text == null || text === '') return null;
@@ -69,9 +63,9 @@ const CLOSING = '\n}';
 const tapOnly = () => `${tee()} >/dev/null`;
 const legacyOpening = () => `[ -f ${shq(tapPath())} ] && exec sh ${shq(tapPath())}`;
 
-export const wrap = (command: string) => (command ? `${opening()}${command}${CLOSING}` : tapOnly());
+const wrap = (command: string) => (command ? `${opening()}${command}${CLOSING}` : tapOnly());
 
-export function unwrap(command: string, dir: string): string | null {
+function unwrap(command: string, dir: string): string | null {
   if (typeof command !== 'string') return null;
   const text = command.trimEnd();
   if (text === tapOnly()) return '';
@@ -94,7 +88,7 @@ async function legacySaved(dir: string) {
   return parse(text);
 }
 
-export async function connection(dir: string): Promise<Connection> {
+export async function connection(dir: string): Promise<ConnectionResult> {
   const path = `${dir}/settings.json`;
   const text = await readTextFile(path);
   const settings = text == null ? {} : parse(text);
@@ -135,7 +129,7 @@ async function forgetLegacy(dir: string) {
 
 export async function connect(dir: string) {
   const c = await connection(dir);
-  if (c.error) throw new Error(c.error);
+  if (c.error !== undefined) throw new Error(c.error);
   if (c.connected) return;
   const original = c.settings.statusLine ?? null;
   const command = original?.type === 'command' && typeof original.command === 'string' ? original.command : '';
@@ -145,7 +139,7 @@ export async function connect(dir: string) {
 
 export async function upgrade(dir: string) {
   const c = await connection(dir);
-  if (c.error || !c.legacy) return;
+  if (c.error !== undefined || !c.legacy || c.command == null) return;
   await writeThrough(
     c.path,
     c.text,
@@ -156,7 +150,7 @@ export async function upgrade(dir: string) {
 
 export async function disconnect(dir: string) {
   const c = await connection(dir);
-  if (c.error) throw new Error(c.error);
+  if (c.error !== undefined) throw new Error(c.error);
   if (!c.connected) return;
   if (c.command == null)
     throw new Error(

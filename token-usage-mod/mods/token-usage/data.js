@@ -7,11 +7,6 @@ export const system = createSystem(exec, process.platform);
 export const dataDir = () => `${appHome()}/data/token-usage`;
 export const tapPath = () => `${appHome()}/mods/token-usage/tap.sh`;
 const CHUNK = 4 * 1024 * 1024;
-export const WINDOWS = [
-    { key: 'five_hour', label: '5h', long: '5 hours', title: '5-hour Claude limit' },
-    { key: 'seven_day', label: 'week', long: 'Week', title: 'Weekly Claude limit' },
-    { key: 'spend_limit', label: 'spend', long: 'Spend', title: 'Claude spend limit' },
-];
 const parse = (text) => {
     if (text == null || text === '')
         return null;
@@ -66,8 +61,8 @@ const opening = () => `${tee()} | {\n`;
 const CLOSING = '\n}';
 const tapOnly = () => `${tee()} >/dev/null`;
 const legacyOpening = () => `[ -f ${shq(tapPath())} ] && exec sh ${shq(tapPath())}`;
-export const wrap = (command) => (command ? `${opening()}${command}${CLOSING}` : tapOnly());
-export function unwrap(command, dir) {
+const wrap = (command) => (command ? `${opening()}${command}${CLOSING}` : tapOnly());
+function unwrap(command, dir) {
     if (typeof command !== 'string')
         return null;
     const text = command.trimEnd();
@@ -127,7 +122,7 @@ async function forgetLegacy(dir) {
 }
 export async function connect(dir) {
     const c = await connection(dir);
-    if (c.error)
+    if (c.error !== undefined)
         throw new Error(c.error);
     if (c.connected)
         return;
@@ -138,14 +133,14 @@ export async function connect(dir) {
 }
 export async function upgrade(dir) {
     const c = await connection(dir);
-    if (c.error || !c.legacy)
+    if (c.error !== undefined || !c.legacy || c.command == null)
         return;
     await writeThrough(c.path, c.text, pretty({ ...c.settings, statusLine: { ...c.settings.statusLine, command: wrap(c.command) } }));
     await forgetLegacy(dir);
 }
 export async function disconnect(dir) {
     const c = await connection(dir);
-    if (c.error)
+    if (c.error !== undefined)
         throw new Error(c.error);
     if (!c.connected)
         return;

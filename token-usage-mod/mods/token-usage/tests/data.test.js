@@ -49,6 +49,8 @@ test('Connect keeps the existing statusline working and saves each report; Disco
   const f = setup(t, original);
   const before = spawnSync('sh', ['-c', own], { input: payload, encoding: 'utf8' }).stdout;
   assert.equal((await data.connection(f.dir)).connected, false);
+  await data.upgrade(f.dir);
+  assert.deepEqual(f.read(), original, 'only a statusline from an earlier version is upgraded');
 
   await data.connect(f.dir);
   assert.equal((await data.connection(f.dir)).connected, true);
@@ -58,7 +60,8 @@ test('Connect keeps the existing statusline working and saves each report; Disco
 
   const connected = f.read();
   await data.connect(f.dir);
-  assert.deepEqual(f.read(), connected, 'connecting twice wraps the command once');
+  await data.upgrade(f.dir);
+  assert.deepEqual(f.read(), connected, 'connecting twice wraps the command once, and there is nothing to upgrade');
 
   rmSync(data.tapPath());
   assert.equal(f.statusline().stdout, before, 'the statusline keeps working after the mod is removed');
@@ -90,8 +93,9 @@ test('a statusline edited by hand after Connect is left alone, and so are settin
 
   for (const text of ['{broken', '[]']) {
     const bad = setup(t, text);
-    await assert.rejects(data.connect(bad.dir));
-    await assert.rejects(data.disconnect(bad.dir));
+    const namesTheFile = error => error.message.includes(bad.path);
+    await assert.rejects(data.connect(bad.dir), namesTheFile);
+    await assert.rejects(data.disconnect(bad.dir), namesTheFile);
     assert.equal(readFileSync(bad.path, 'utf8'), text);
   }
 });

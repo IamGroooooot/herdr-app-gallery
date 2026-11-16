@@ -61,7 +61,7 @@ npm run verify
 
 - Only `src/system.ts` starts a shell. It holds one command for each thing Herdr's mod runtime lacks: file size, byte-range read, modification order and environment. Each command uses POSIX sh and standard utilities only and has a PowerShell twin. Parsing stays in TypeScript.
 - After changing what the panel draws, look at the running app with `herdr-app shot` and check `herdr-app status`.
-- Linux is checked in containers, busybox and GNU:
+- Every push runs the tests and lint on Linux and macOS in GitHub Actions. busybox is checked in a container:
 
 ```sh
 for image in node:22-alpine node:22-slim; do

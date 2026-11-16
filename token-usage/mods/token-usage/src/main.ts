@@ -39,7 +39,9 @@ import {
   commonPeriod,
   litSegments,
   ownColors,
+  PREFS_KEY,
   periodWidth,
+  readPrefs,
   remainingPercent,
   remainingValue,
   resetLabel,
@@ -48,7 +50,6 @@ import {
   STRIP_STYLES,
   stripHeight,
   stripOverflows,
-  stripStyle,
   usageProviders,
   usageValue,
 } from './usage-model.js';
@@ -58,8 +59,6 @@ type Theme = Record<string, Color>;
 
 const ICON = (name: string) => `mods/token-usage/icons/${name}.svg`;
 const SESSIONS_EVERY = 5000;
-const PREFS = 'token-usage.prefs';
-const DEFAULTS = { warn: 80, urgent: 95, sound: true, style: 'gauge' as StripStyle, theme: null as string | null };
 const PLANS: Record<string, string> = {
   pro: 'Claude Pro',
   max: 'Claude Max',
@@ -67,37 +66,11 @@ const PLANS: Record<string, string> = {
   enterprise: 'Claude Enterprise',
   ultra: 'Claude Ultra',
 };
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const prefs = (): Prefs => {
-  const saved = (shared(PREFS) as Partial<Prefs>) ?? {};
-  return {
-    ...DEFAULTS,
-    ...saved,
-    style: stripStyle(saved.style),
-    theme: typeof saved.theme === 'string' ? saved.theme : null,
-  };
-};
+const prefs = (): Prefs => readPrefs(shared(PREFS_KEY));
 const ownTheme = () => ownColors(themes(), prefs().theme);
 const palette = (): Theme => ({ ...theme(), ...ownTheme() }) as Theme;
-
-function clock(d: Date, long = false) {
-  const h = d.getHours();
-  const m = String(d.getMinutes()).padStart(2, '0');
-  const ap = h < 12 ? 'am' : 'pm';
-  if (long) return `${h % 12 || 12}:${m} ${ap}`;
-  return `${h % 12 || 12}${m === '00' ? '' : `:${m}`}${ap}`;
-}
-
-function resetText(sec: number, long = false) {
-  const at = sec * 1000;
-  const left = at - Date.now();
-  if (left <= 0) return `reset at ${clock(new Date(at), long)}`;
-  if (left < 3600000) return `resets in ${Math.max(1, Math.round(left / 60000))}m`;
-  const d = new Date(at);
-  return `resets ${d.toDateString() === new Date().toDateString() ? '' : `${DAYS[d.getDay()]} `}${clock(d, long)}`;
-}
 
 function ago(ms: number) {
   const m = Math.floor(Math.max(0, ms) / 60000);
@@ -132,32 +105,25 @@ function ownBlock(node: unknown): string | null {
 const tilde = (path: string) => (path.startsWith(home()) ? `~${path.slice(home().length)}` : path);
 
 export default class ClaudeUsage extends View {
-  overlay: string | null;
-  page: PageId;
-  rows: SessionRow[] | null;
-  rowsError: string | null;
-  totals: Totals;
-  transcripts: Map<string, string>;
-  busy: Record<string, boolean>;
-  error: string | null;
-  pending: string | null;
-  pendingAction: ConfirmAction | null;
+  overlay: string | null = null;
+  page: PageId = 'usage';
+  rows: SessionRow[] | null = null;
+  rowsError: string | null = null;
+  totals = new Totals();
+  transcripts = new Map<string, string>();
+  busy: Record<string, boolean> = {};
+  error: string | null = null;
+  pending: string | null = null;
+  pendingAction: ConfirmAction | null = null;
   narrow = false;
   fitted: number | null = null;
-  store: UsageStore;
+  store!: UsageStore;
 
   override init(_props: unknown, cx: AsyncContext) {
     this.overlay = (props()?.overlay as string) ?? null;
     const requestedPage = props()?.page;
     this.page = requestedPage === 'account' || requestedPage === 'codex-account' ? requestedPage : 'usage';
     this.store = usageStore();
-    this.rows = null;
-    this.rowsError = null;
-    this.totals = new Totals();
-    this.transcripts = new Map();
-    this.busy = {};
-    this.error = null;
-    this.pending = null;
 
     if (checking()) return;
 
@@ -181,7 +147,7 @@ export default class ClaudeUsage extends View {
         if (c === 'settings' || c === 'account' || c === 'codex-account' || c === 'codexaccount') {
           if (!this.overlay)
             this.openSettings(c === 'settings' ? 'usage' : c === 'codexaccount' ? 'codex-account' : (c as PageId));
-        } else if (this.pending && c === this.pending) await this.act(this.pendingAction, cx);
+        } else if (this.pending && c === this.pending && this.pendingAction) await this.act(this.pendingAction, cx);
         cx.notify();
       }
     });
@@ -236,7 +202,7 @@ export default class ClaudeUsage extends View {
             if (!sid) continue;
             let transcript = this.data?.sessions.get(sid)?.transcript ?? this.transcripts.get(sid);
             if (!transcript) {
-              transcript = await findTranscript(projectsDir(this.claudeContext()), sid);
+              transcript = (await findTranscript(projectsDir(this.claudeContext()), sid)) ?? undefined;
               if (transcript) this.transcripts.set(sid, transcript);
             }
             if (!transcript) continue;
@@ -264,6 +230,10 @@ export default class ClaudeUsage extends View {
         cx.notify();
       }
     });
+  }
+
+  closeSettings() {
+    if (this.overlay) closeOverlay(this.overlay);
   }
 
   openSettings(page: PageId) {
@@ -334,7 +304,7 @@ export default class ClaudeUsage extends View {
     const local = spaces().find(s => s.machine == null && s.active) ?? spaces().find(s => s.machine == null);
     if (local) run('tab.new', { name, space: local.id, argv });
     else run('space.new', { name, argv, machine: '' });
-    if (this.overlay) closeOverlay(this.overlay);
+    this.closeSettings();
   }
 
   askConnect() {
@@ -470,7 +440,8 @@ export default class ClaudeUsage extends View {
       p.at ? `Updated ${ago(Date.now() - p.at)}.` : null,
       p.error,
       ...p.windows.map(
-        w => `${w.label}: ${remainingValue(w)} left (${usageValue(w)} used), ${resetText(w.resets, true)}`,
+        w =>
+          `${w.label}: ${remainingValue(w)} left (${usageValue(w)} used), ${w.resets * 1000 <= Date.now() ? 'already reset' : `resets ${resetLabel(w.resets)}`}`,
       ),
     ]
       .filter(Boolean)
@@ -516,7 +487,15 @@ export default class ClaudeUsage extends View {
               .flex_none()
               .gap(1)
               .child(name())
-              .when(noted, el => el.child(div().truncate().text_size(10).text_color(noteColor).child(note))),
+              .when(noted, el =>
+                el.child(
+                  div()
+                    .truncate()
+                    .text_size(10)
+                    .text_color(noteColor)
+                    .child(note ?? ''),
+                ),
+              ),
           )
           .when(periodColumn > 0, el => el.child(period()))
           .child(this.meter(t, w, dimmed))
@@ -534,7 +513,15 @@ export default class ClaudeUsage extends View {
             .child(div().w(nameWidth).flex_none().child(name()))
             .when(periodColumn > 0, el => el.child(period()))
             .child(div().flex_none().font_medium().text_color(this.valueColor(t, w)).child(remainingValue(w)))
-            .when(noted, el => el.child(div().flex_none().text_size(10).text_color(noteColor).child(note)))
+            .when(noted, el =>
+              el.child(
+                div()
+                  .flex_none()
+                  .text_size(10)
+                  .text_color(noteColor)
+                  .child(note ?? ''),
+              ),
+            )
             .child(div().flex_1())
             .child(resets()),
         )
@@ -668,7 +655,7 @@ export default class ClaudeUsage extends View {
       const meta = signedIn
         ? [
             account.email,
-            PLANS[account.plan] || account.plan || account.method,
+            PLANS[account.plan ?? ''] || account.plan || account.method,
             account.expiresAt ? `Expires ${monthDay(account.expiresAt)}` : null,
           ]
             .filter(Boolean)
@@ -817,7 +804,7 @@ export default class ClaudeUsage extends View {
                   .cursor_pointer()
                   .text_color(t.muted)
                   .hover(s => s.text_color(t.foreground))
-                  .on_click(() => closeOverlay(this.overlay))
+                  .on_click(() => this.closeSettings())
                   .child(this.icon('x', t.muted, 14)),
               ),
           )
@@ -929,7 +916,7 @@ export default class ClaudeUsage extends View {
         .hover(s => s.bg(t.hover))
         .on_click(() => {
           run('agent.focus', { terminal: r.address });
-          closeOverlay(this.overlay);
+          this.closeSettings();
         })
         .child(
           h_flex()
@@ -955,7 +942,7 @@ export default class ClaudeUsage extends View {
     const empty = this.rows == null ? 'Reading transcripts.' : 'No Claude Code sessions in Herdr on this computer.';
 
     const { warn, urgent, sound } = prefs();
-    const set = (patch: Partial<Prefs>) => setShared(PREFS, { ...prefs(), ...patch });
+    const set = (patch: Partial<Prefs>) => setShared(PREFS_KEY, { ...prefs(), ...patch });
     const stepper = (id: string, label: string, value: number, min: number, max: number, key: 'warn' | 'urgent') =>
       h_flex()
         .gap(8)
@@ -992,7 +979,13 @@ export default class ClaudeUsage extends View {
           el.child(div().py(8).text_size(12).text_color(t.muted).child(empty)),
         )
         .when(Boolean(this.rowsError), el =>
-          el.child(div().py(8).text_size(12).text_color(t.blocked).child(this.rowsError)),
+          el.child(
+            div()
+              .py(8)
+              .text_size(12)
+              .text_color(t.blocked)
+              .child(this.rowsError ?? ''),
+          ),
         )
         .when(Boolean(rows.length), el =>
           el.child(
@@ -1128,7 +1121,7 @@ export default class ClaudeUsage extends View {
             .child(`It edits ${tilde(l.path)}. Edit your command there, and Disconnect keeps your edit.`),
         );
     }
-    for (const e of [this.error, this.store.connection.error].filter(Boolean))
+    for (const e of [this.error, this.store.connection.error].filter((e): e is string => Boolean(e)))
       link.child(div().text_size(12).text_color(t.blocked).child(e));
 
     return v_flex().gap(10).child(this.heading(t, 'Claude Code connection')).child(link);

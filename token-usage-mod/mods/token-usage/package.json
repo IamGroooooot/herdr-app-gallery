@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.core.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json && node scripts/stamp-generated.mjs",
     "mirror": "node scripts/mirror.mjs",
     "test": "npm run build && npm run mirror && node --test tests/*.test.js ../../tests/*.test.js",

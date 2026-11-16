@@ -53,15 +53,22 @@ export interface ClaudeLimits {
   reports: number;
   reportedAt: number | null;
 }
-export interface Connection {
-  path?: string;
-  error?: string;
-  connected?: boolean;
-  legacy?: boolean;
-  command?: string;
-  text?: string;
-  settings?: { statusLine?: { type?: string; command?: string; [key: string]: unknown }; [key: string]: unknown };
+export interface ClaudeSettings {
+  statusLine?: { type?: string; command?: string; [key: string]: unknown };
+  [key: string]: unknown;
 }
+/** `text` is null when there is no settings file. `command` is the user's own statusline command;
+ *  null when not connected, or when the command no longer has the shape Connect wrote. */
+export interface Connection {
+  path: string;
+  text: string | null;
+  settings: ClaudeSettings;
+  connected: boolean;
+  legacy: boolean;
+  command: string | null;
+  error?: undefined;
+}
+export type ConnectionResult = Connection | { path: string; error: string };
 export interface Tokens {
   output: number;
   input: number;
@@ -89,7 +96,7 @@ export interface DisplayProvider {
   at: number | null;
   error: string | null;
   stale: boolean;
-  message?: string;
+  message: string;
   detail?: string;
   windows: readonly UsageWindow[];
 }

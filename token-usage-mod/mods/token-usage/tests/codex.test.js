@@ -1,36 +1,45 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CodexLogs, codexAccountFailure, codexAccountStatus, latestSamples, usageEvent } from '../codex.js';
-import { decodeCodexAccount, decodeCodexUsage } from '../providers.js';
+import { codexReport } from '../providers.js';
 import { event } from './helpers.js';
 
 test('login status never carries CLI output, which may hold a key', () => {
   assert.deepEqual(codexAccountStatus(0, 'Logged in using an API key - sk-test-secret'), {
-    loggedIn: true,
+    kind: 'signed-in',
     method: 'API key',
   });
-  assert.deepEqual(codexAccountStatus(0, 'Logged in using ChatGPT'), { loggedIn: true, method: 'ChatGPT' });
-  assert.deepEqual(codexAccountStatus(1, 'Not logged in'), { loggedIn: false });
-  assert(!JSON.stringify(codexAccountStatus(1, 'unexpected sk-test-secret')).includes('sk-test-secret'));
+  assert.deepEqual(codexAccountStatus(0, 'Logged in using ChatGPT'), { kind: 'signed-in', method: 'ChatGPT' });
+  assert.deepEqual(codexAccountStatus(1, 'Not logged in'), { kind: 'signed-out' });
+  const undetermined = [
+    [1, 'unexpected sk-test-secret'],
+    [0, 'Logged in using sk-test-secret'],
+    [1, 'Logged in using ChatGPT'],
+  ];
+  for (const [code, output] of undetermined) {
+    assert.throws(
+      () => codexAccountStatus(code, output),
+      error => !error.message.includes('sk-test-secret'),
+    );
+  }
 });
 test('a missing CLI is unavailable; a slow or failing one is an error', () => {
-  const missing = codexAccountFailure(
-    new Error('`herdr.exec`: cannot run codex: No such file or directory (os error 2)'),
-  );
-  assert.equal(decodeCodexAccount(missing).kind, 'unavailable');
+  const missing = new Error('`herdr.exec`: cannot run codex: No such file or directory (os error 2)');
+  assert.equal(codexAccountFailure(missing).kind, 'unavailable');
   for (const reason of [
     '`herdr.exec`: codex took longer than 8 s and was stopped',
     'permission denied sk-test-secret',
   ]) {
-    const failure = codexAccountFailure(new Error(reason));
-    assert.equal(failure.missing, undefined);
-    assert(!JSON.stringify(failure).includes('sk-test-secret'));
-    assert.throws(() => decodeCodexAccount(failure));
+    assert.throws(
+      () => codexAccountFailure(new Error(reason)),
+      error => !error.message.includes('sk-test-secret'),
+    );
   }
 });
 test('invalid values do not become usage', () => {
   assert.equal(usageEvent('{bad'), null);
   assert.equal(usageEvent(event('2026-11-16T00:00:00Z', 101)), null);
+  assert.equal(usageEvent(event('2026-11-16T00:00:00Z', -1)), null);
   assert.equal(usageEvent(event('2026-11-16T00:00:00Z', '26')), null);
   assert.equal(usageEvent(event('not a time', 26)), null);
   assert.equal(usageEvent(event('2026-11-16T00:00:00Z', 26).replace('token_count', 'other')), null);
@@ -66,7 +75,7 @@ test('a usage event keeps its time, limit and valid windows', () => {
     ],
   );
   assert.deepEqual(
-    decodeCodexUsage({ samples: [both] }).windows.map(w => w.label),
+    codexReport({ samples: [both], error: null }).windows.map(w => w.label),
     ['Week', '5h'],
   );
   assert.deepEqual(
@@ -74,7 +83,7 @@ test('a usage event keeps its time, limit and valid windows', () => {
     [2],
   );
 });
-test('logs combine into one report the provider decoder accepts, codex first', async () => {
+test('logs combine into one report, codex first; a log that could not be read fails the report', async () => {
   const tails = [
     {
       path: 'a',
@@ -91,7 +100,7 @@ test('logs combine into one report the provider decoder accepts, codex first', a
       ['alpha', 70],
     ],
   );
-  assert.equal(decodeCodexUsage(usage).windows.length, 2);
+  assert.equal(codexReport(usage).windows.length, 2);
   const failed = await new CodexLogs(async () => ({ tails, failures: 2 })).read();
-  assert.throws(() => decodeCodexUsage(failed), /2 session logs/);
+  assert.throws(() => codexReport(failed), /2 session logs/);
 });

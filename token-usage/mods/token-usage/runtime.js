@@ -4,17 +4,18 @@ import { CodexLogs, codexAccountFailure, codexAccountStatus } from './codex.js';
 import { auth, clearReports, configDir, connection, limits, projectsDir, system, upgrade } from './data.js';
 import { createProviders } from './providers.js';
 import { claimAlert, UsageStore } from './store.js';
-import { resetLabel } from './usage-model.js';
+import { PREFS_KEY, readPrefs, resetLabel } from './usage-model.js';
 let instance = null;
 let revision = 0;
 async function codexAccount() {
+    let result;
     try {
-        const result = await exec('codex', ['login', 'status'], { timeout: 8000 });
-        return codexAccountStatus(result.code, `${result.stdout}\n${result.stderr}`);
+        result = await exec('codex', ['login', 'status'], { timeout: 8000 });
     }
     catch (reason) {
         return codexAccountFailure(reason);
     }
+    return codexAccountStatus(result.code, `${result.stdout}\n${result.stderr}`);
 }
 function changed() {
     const store = instance;
@@ -27,19 +28,19 @@ function changed() {
         !store.connection.loading &&
         !store.usage.claude.error &&
         !store.usage.claude.loading) {
-        const settings = { warn: 80, urgent: 95, sound: true, ...(shared('token-usage.prefs') ?? {}) };
+        const settings = readPrefs(shared(PREFS_KEY));
         const report = store.usage.claude.value;
         if (report?.reportedAt && Date.now() - report.reportedAt < 3600000)
             for (const w of report.windows) {
                 if (w.resets * 1000 <= Date.now() || w.used < settings.warn)
                     continue;
                 const urgent = w.used >= settings.urgent;
-                const key = `${store.accounts.claude.value.context?.identity ?? 'claude'}:${w.key}:${w.resets}:${urgent ? 'urgent' : 'warn'}`;
+                const window = `${store.accounts.claude.value.context?.identity ?? 'claude'}:${w.key}:${w.resets}`;
                 const read = () => shared('token-usage.alerted') ?? [];
                 const write = (keys) => setShared('token-usage.alerted', keys);
-                if (!claimAlert(read, write, key))
+                if (!claimAlert(read, write, `${window}:${urgent ? 'urgent' : 'warn'}`))
                     continue;
-                claimAlert(read, write, `${store.accounts.claude.value.context?.identity ?? 'claude'}:${w.key}:${w.resets}:warn`);
+                claimAlert(read, write, `${window}:warn`);
                 notify({
                     title: `${w.label} Claude limit at ${Math.round(w.used)}%`,
                     body: `Resets ${resetLabel(w.resets)}.`,
@@ -68,7 +69,7 @@ export function usageStore() {
         connection: async (account) => {
             const dir = configDir(account?.context ?? {});
             let result = await connection(dir);
-            if (result.legacy && Date.now() - upgradeAt > 300000) {
+            if (result.error === undefined && result.legacy && Date.now() - upgradeAt > 300000) {
                 upgradeAt = Date.now();
                 await upgrade(dir);
                 result = await connection(dir);

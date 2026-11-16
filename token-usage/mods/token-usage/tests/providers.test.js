@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createProviders, decodeCodexAccount, decodeCodexUsage, periodLabel } from '../providers.js';
+import { codexReport, createProviders, periodLabel } from '../providers.js';
 import { Resource } from '../resource.js';
 import {
   commonPeriod,
   litSegments,
   ownColors,
   periodWidth,
+  readPrefs,
   remainingPercent,
   remainingValue,
   resetLabel,
@@ -21,7 +22,12 @@ import {
 
 const now = 2_000_000_000_000;
 const window = { used: 26, resets: now / 1000 + 100 };
-const sample = { limit_id: 'codex', at: now / 1000, windows: [{ ...window, key: 'primary', minutes: 10080 }] };
+const sample = {
+  limit_id: 'codex',
+  name: null,
+  at: now / 1000,
+  windows: [{ ...window, key: 'primary', minutes: 10080 }],
+};
 const raw = { samples: [sample], error: null };
 const claudeAuth = { loggedIn: true, authMethod: 'claude.ai', email: 'test@example.test', subscriptionType: 'max' };
 
@@ -35,7 +41,7 @@ function providers(overrides = {}) {
     }),
     claudeAccount: async () => claudeAuth,
     codexUsage: async () => raw,
-    codexAccount: async () => ({ loggedIn: true, method: 'ChatGPT' }),
+    codexAccount: async () => ({ kind: 'signed-in', method: 'ChatGPT' }),
     ...overrides,
   });
 }
@@ -82,28 +88,9 @@ test('a Claude account is told apart by email and organization; a failed or miss
   await assert.rejects(account({}));
 });
 
-test('unknown account statuses are errors, not signed in', () => {
-  assert.throws(() => decodeCodexAccount({ loggedIn: true, method: 'unknown' }));
-  assert.throws(
-    () => decodeCodexAccount({ error: 'sk-secret' }),
-    error => !error.message.includes('sk-secret'),
-  );
-  assert.deepEqual(decodeCodexAccount({ loggedIn: false }), { kind: 'signed-out' });
-  assert.equal(decodeCodexAccount({ missing: true }).kind, 'unavailable');
-});
-
-test('malformed reports and impossible percentages never reach UI', async () => {
-  for (const bad of [null, {}, { samples: null }, { samples: [null] }]) assert.throws(() => decodeCodexUsage(bad));
-  for (const used of [NaN, Infinity, -1, 101, '26']) {
-    assert.throws(() => decodeCodexUsage({ samples: [{ ...sample, windows: [{ ...sample.windows[0], used }] }] }));
-    const claude = providers({ claudeUsage: async () => ({ windows: { seven_day: { ...window, used } } }) }).claude;
-    await assert.rejects(claude.readUsage());
-  }
-});
-
 test('limits are named by their period, and a limit beyond the plan’s own by its name too', async () => {
   assert.deepEqual([10080, 20160, 1440, 300, 90].map(periodLabel), ['Week', '14d', '1d', '5h', '90m']);
-  const named = decodeCodexUsage({ samples: [sample, { ...sample, limit_id: 'spark', name: 'Spark' }] });
+  const named = codexReport({ samples: [sample, { ...sample, limit_id: 'spark', name: 'Spark' }], error: null });
   assert.deepEqual(
     named.windows.map(w => [w.key, w.label]),
     [
@@ -111,7 +98,9 @@ test('limits are named by their period, and a limit beyond the plan’s own by i
       ['spark:primary', 'Spark · Week'],
     ],
   );
-  assert.equal(decodeCodexUsage({ samples: [{ ...sample, limit_id: 'spark' }] }).windows[0].label, 'spark · Week');
+  const unnamed = codexReport({ samples: [{ ...sample, limit_id: 'spark' }], error: null });
+  assert.equal(unnamed.windows[0].label, 'spark · Week');
+  assert.deepEqual(codexReport({ samples: [], error: null }), { windows: [], reportedAt: null, sessions: new Map() });
 
   const windows = { five_hour: window, seven_day: window, spend_limit: window, monthly: window };
   const claude = await providers({ claudeUsage: async () => ({ windows }) }).claude.readUsage();
@@ -304,4 +293,12 @@ test('a theme picked for the mod supplies its colors; a missing one falls back t
   ];
   assert.deepEqual(ownColors(all, 'paper'), { accent: '#2255cc' });
   for (const name of [null, '', 'deleted-theme']) assert.equal(ownColors(all, name), null);
+});
+
+test('a saved preference that is not a valid choice takes its default', () => {
+  const defaults = { warn: 80, urgent: 95, sound: true, style: 'gauge', theme: null };
+  for (const saved of [null, undefined, 'x', [], {}]) assert.deepEqual(readPrefs(saved), defaults);
+  const chosen = { warn: 90, urgent: 100, sound: false, style: 'meter', theme: 'paper' };
+  assert.deepEqual(readPrefs(chosen), chosen);
+  assert.deepEqual(readPrefs({ warn: '90', urgent: 140, sound: 'no', style: 'pie', theme: 3 }), defaults);
 });

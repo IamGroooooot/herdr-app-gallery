@@ -75,20 +75,21 @@ export class CodexLogs {
         return { samples, error: failures ? `Could not read ${failures} session logs.` : null };
     }
 }
+const UNDETERMINED = 'Could not check Codex sign-in. Run codex login status in a terminal.';
 /** CLI output may contain a key: only the sign-in method leaves this function. */
 export function codexAccountStatus(code, output) {
     const text = output.toLowerCase();
     if (code === 0 && text.includes('logged in using chatgpt'))
-        return { loggedIn: true, method: 'ChatGPT' };
+        return { kind: 'signed-in', method: 'ChatGPT' };
     if (code === 0 && text.includes('logged in using') && text.includes('api key'))
-        return { loggedIn: true, method: 'API key' };
+        return { kind: 'signed-in', method: 'API key' };
     if (text.includes('not logged in'))
-        return { loggedIn: false };
-    return { error: 'Could not determine Codex login status. Try codex login status in a terminal.' };
+        return { kind: 'signed-out' };
+    throw new Error(UNDETERMINED);
 }
 export function codexAccountFailure(reason) {
     const message = reason instanceof Error ? reason.message : String(reason);
     if (/no such file|not found|cannot find/i.test(message))
-        return { missing: true, error: "Codex is not installed or is not on Herdr's PATH." };
-    return { error: 'Could not run codex login status. Try again.' };
+        return { kind: 'unavailable', reason: "Codex is not installed or is not on Herdr's PATH." };
+    throw new Error(UNDETERMINED);
 }

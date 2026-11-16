@@ -1,6 +1,7 @@
 /** Never credentials or conversation content. */
 import { finite, object, parseJson } from './json.js';
 import type { LogTails } from './system.js';
+import type { AccountState } from './types.js';
 
 export interface CodexWindow {
   key: string;
@@ -84,19 +85,21 @@ export class CodexLogs {
   }
 }
 
+const UNDETERMINED = 'Could not check Codex sign-in. Run codex login status in a terminal.';
+
 /** CLI output may contain a key: only the sign-in method leaves this function. */
-export function codexAccountStatus(code: number, output: string): Record<string, unknown> {
+export function codexAccountStatus(code: number, output: string): AccountState {
   const text = output.toLowerCase();
-  if (code === 0 && text.includes('logged in using chatgpt')) return { loggedIn: true, method: 'ChatGPT' };
+  if (code === 0 && text.includes('logged in using chatgpt')) return { kind: 'signed-in', method: 'ChatGPT' };
   if (code === 0 && text.includes('logged in using') && text.includes('api key'))
-    return { loggedIn: true, method: 'API key' };
-  if (text.includes('not logged in')) return { loggedIn: false };
-  return { error: 'Could not determine Codex login status. Try codex login status in a terminal.' };
+    return { kind: 'signed-in', method: 'API key' };
+  if (text.includes('not logged in')) return { kind: 'signed-out' };
+  throw new Error(UNDETERMINED);
 }
 
-export function codexAccountFailure(reason: unknown): Record<string, unknown> {
+export function codexAccountFailure(reason: unknown): AccountState {
   const message = reason instanceof Error ? reason.message : String(reason);
   if (/no such file|not found|cannot find/i.test(message))
-    return { missing: true, error: "Codex is not installed or is not on Herdr's PATH." };
-  return { error: 'Could not run codex login status. Try again.' };
+    return { kind: 'unavailable', reason: "Codex is not installed or is not on Herdr's PATH." };
+  throw new Error(UNDETERMINED);
 }

@@ -41,7 +41,7 @@ const LOGS = 24;
 const TAIL_BYTES = 2 * 1024 * 1024;
 const TAIL_LINES = 32;
 
-// `dd` seeks; whether `tail -c +N` does depends on the implementation. `dd` skips whole
+// `dd` seeks; busybox `tail -c +N` reads the file from its start. `dd` skips whole
 // blocks, so `from` seeks to the block holding the byte offset and drops the bytes before it.
 const BLOCK = 65536;
 const FROM = `from() { dd if="$1" bs=${BLOCK} skip="$(($2 / ${BLOCK}))" 2>/dev/null | tail -c +"$(($2 % ${BLOCK} + 1))"; }`;
@@ -134,7 +134,7 @@ const PS_CODEX_TAILS = [
 
 const PS_CLAUDE_CONFIG_DIR = "$v=[Environment]::GetEnvironmentVariable('CLAUDE_CONFIG_DIR'); if($v){W($v)}";
 
-export function parseSizes(stdout: string, files: readonly string[]): Map<string, number> {
+function parseSizes(stdout: string, files: readonly string[]): Map<string, number> {
   const out = new Map<string, number>();
   for (const line of stdout.split('\n')) {
     const m = /^\s*(\d+)\s+(.+?)\r?$/.exec(line);
@@ -143,13 +143,13 @@ export function parseSizes(stdout: string, files: readonly string[]): Map<string
   return out;
 }
 
-export function parseChunk(stdout: string): Chunk | null {
+function parseChunk(stdout: string): Chunk | null {
   const cut = stdout.indexOf('\n');
   if (cut < 1 || !/^\d+$/.test(stdout.slice(0, cut))) return null;
   return { size: Number(stdout.slice(0, cut)), body: stdout.slice(cut + 1) };
 }
 
-export function parseTails(stdout: string): LogTails {
+function parseTails(stdout: string): LogTails {
   const tails: LogTail[] = [];
   let failures = 0;
   let lines: string[] | null = null;

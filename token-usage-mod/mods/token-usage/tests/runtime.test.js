@@ -9,7 +9,7 @@ import { host } from './herdr-stub.js';
 const data = await import('../data.js');
 let loads = 0;
 
-async function claude(t, prefs) {
+async function claude(t, prefs, statusline) {
   const root = temp(t);
   const dir = join(root, 'claude');
   mkdirSync(dir);
@@ -33,7 +33,8 @@ async function claude(t, prefs) {
       codex: () => ({ code: 1, stdout: 'Not logged in', stderr: '' }),
     },
   });
-  await data.connect(dir);
+  if (statusline) writeFileSync(join(dir, 'settings.json'), JSON.stringify({ statusLine: statusline(dir) }));
+  else await data.connect(dir);
   const sessions = join(data.dataDir(), 'sessions');
   mkdirSync(sessions, { recursive: true });
   // One store per load of the module, as in Herdr.
@@ -41,6 +42,7 @@ async function claude(t, prefs) {
   const store = usageStore();
   const started = Date.now() / 1000;
   return {
+    dir,
     store,
     async reply(used, { age = 0, resetsIn = 86400 } = {}) {
       const limit = { used_percentage: used, resets_at: started + resetsIn };
@@ -95,4 +97,17 @@ test('an old report or a limit that has already reset does not alert', async t =
   const reset = await claude(t);
   await reset.reply(96, { resetsIn: -60 });
   assert.deepEqual(levels(), []);
+});
+
+test('a statusline connected by an earlier version is upgraded when the views first poll', async t => {
+  const earlier = dir => ({
+    type: 'command',
+    command: `[ -f '${data.tapPath()}' ] && exec sh '${data.tapPath()}' '${data.backupDir(dir)}'; printf hud`,
+  });
+  const f = await claude(t, undefined, earlier);
+  assert.equal((await data.connection(f.dir)).legacy, true);
+  await f.store.poll();
+  const upgraded = await data.connection(f.dir);
+  assert.deepEqual([upgraded.connected, upgraded.legacy, upgraded.command], [true, false, 'printf hud']);
+  assert.equal(f.store.connection.value.legacy, false);
 });

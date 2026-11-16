@@ -1,7 +1,7 @@
 // Generated from src/reports.ts. Edit the TS source, then run npm run verify.
 /** Claude statusline reports saved by tap.sh: `{"reported_at": seconds, "report": payload}`. */
 import { finite, object, parseJson } from './json.js';
-const KEYS = ['five_hour', 'seven_day', 'spend_limit'];
+export const CLAUDE_WINDOWS = { five_hour: '5h', seven_day: 'Week', spend_limit: 'Spend' };
 const KEEP = 8 * 86400000;
 const under = (path, folder) => {
     const base = folder.replace(/[\\/]+$/, '');
@@ -35,7 +35,7 @@ export function decodeReports(files, now, projects) {
         sessions.set(sid, { transcript, model: typeof model === 'string' ? model : null });
         const foreign = Boolean(projects && transcript && !under(transcript, projects));
         let active = false;
-        for (const key of foreign ? [] : KEYS) {
+        for (const key of foreign ? [] : Object.keys(CLAUDE_WINDOWS)) {
             const w = object(object(payload.rate_limits)?.[key]);
             const used = w?.used_percentage, resets = w?.resets_at;
             if (!finite(used) || !finite(resets) || used < 0 || used > 100 || resets <= 0)
