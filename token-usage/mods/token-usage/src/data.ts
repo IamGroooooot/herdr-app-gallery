@@ -182,30 +182,11 @@ export async function prune() {
 }
 
 export async function limits(): Promise<ClaudeLimits> {
-  const dir = `${dataDir()}/sessions`;
-  let names = [];
-  try {
-    names = (await fs.readdir(dir)).filter((n) => n.endsWith(".json"));
-  } catch {
-    return { windows: {}, sessions: new Map(), reports: 0 };
-  }
-  const windows: ClaudeLimits["windows"] = {};
-  const sessions: ClaudeLimits["sessions"] = new Map();
-  for (const name of names) {
-    const p = parse(await readTextFile(`${dir}/${name}`).catch((): null => null));
-    if (!p) continue;
-    sessions.set(p.session_id ?? name.slice(0, -5), { transcript: p.transcript_path ?? null, model: p.model?.display_name ?? null });
-    for (const { key } of WINDOWS) {
-      const w = p.rate_limits?.[key];
-      if (!w || typeof w.used_percentage !== "number") continue;
-      const resets = typeof w.resets_at === "number" ? w.resets_at : 0;
-      const best = windows[key];
-      if (!best || resets > best.resets || (resets === best.resets && w.used_percentage > best.used)) {
-        windows[key] = { used: w.used_percentage, resets };
-      }
-    }
-  }
-  return { windows, sessions, reports: names.length };
+  const result = await exec("python3", [`${appHome()}/mods/token-usage/read_claude_usage.py`, `${dataDir()}/sessions`], { timeout: 10000 });
+  if (result.code !== 0) throw new Error("Could not read Claude usage reports.");
+  const report = JSON.parse(result.stdout);
+  if (report.error) throw new Error(report.error);
+  return { windows: report.windows, sessions: new Map(Object.entries(report.sessions)), reports: report.reports, reportedAt: report.reportedAt };
 }
 
 export async function sessionOf(address: string, dir: string) {

@@ -24,3 +24,17 @@ test('a signed-out result replaces a previously signed-in account', async () => 
   state = {kind:'signed-out'}; await resource.refresh();
   assert.deepEqual(resource.value,{kind:'signed-out'});
 });
+test('invalidation prevents an older in-flight result from restoring stale data', async () => {
+  let resolve;
+  const resource = new Resource(()=>new Promise(r=>{resolve=r;}));
+  const request=resource.refresh(); await Promise.resolve();
+  resource.invalidate(); resolve('old account usage'); await request;
+  assert.equal(resource.value,null);
+});
+test('failed attempts also respect TTL, avoiding a process-spawn storm', async () => {
+  let now=0,calls=0;
+  const resource=new Resource(async()=>{calls++;throw new Error('offline');},()=>now);
+  await resource.refresh(10000); await resource.refresh(10000);
+  assert.equal(calls,1);
+  now=10000; await resource.refresh(10000); assert.equal(calls,2);
+});

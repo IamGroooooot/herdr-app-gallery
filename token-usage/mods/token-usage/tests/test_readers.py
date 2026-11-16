@@ -47,3 +47,25 @@ class Readers(unittest.TestCase):
         self.assertIsNone(usage.usage_event(b'{bad'))
         self.assertIsNone(usage.usage_event(event('2026-11-16T00:00:00Z',float('nan'))))
         self.assertIsNone(usage.usage_event(event('2026-11-16T00:00:00Z',101)))
+
+class ClaudeReports(unittest.TestCase):
+    def test_identical_usage_with_a_new_report_is_fresh(self):
+        import os
+        reader=load('read_claude_usage')
+        with tempfile.TemporaryDirectory() as d:
+            directory=Path(d); report=directory/'session.json'
+            report.write_text(json.dumps({'session_id':'s','rate_limits':{'seven_day':{'used_percentage':59,'resets_at':2000000000}}}))
+            os.utime(report,(1000,1000))
+            old=reader.read_usage(directory)
+            os.utime(report,(2000,2000))
+            new=reader.read_usage(directory)
+            self.assertEqual(old['windows'],new['windows'])
+            self.assertEqual(new['reportedAt'],2000000)
+            self.assertNotEqual(old['reportedAt'],new['reportedAt'])
+    def test_read_errors_are_distinct_from_no_reports(self):
+        reader=load('read_claude_usage')
+        with tempfile.TemporaryDirectory() as d:
+            directory=Path(d)
+            self.assertIsNone(reader.read_usage(directory)['reportedAt'])
+            (directory/'bad.json').write_text('{broken')
+            self.assertIsNotNone(reader.read_usage(directory)['error'])

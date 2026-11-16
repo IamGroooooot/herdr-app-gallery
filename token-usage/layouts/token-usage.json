@@ -71,7 +71,7 @@
           "id": "token-usage",
           "type": "block",
           "size": {
-            "px": 124
+            "px": 92
           },
           "content": {
             "mod": "token-usage"

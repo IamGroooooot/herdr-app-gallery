@@ -8,7 +8,8 @@
     "src/types.ts",
     "src/resource.ts",
     "src/providers.ts",
-    "src/usage-model.ts"
+    "src/usage-model.ts",
+    "src/store.ts"
   ],
   "exclude": [
     "node_modules"

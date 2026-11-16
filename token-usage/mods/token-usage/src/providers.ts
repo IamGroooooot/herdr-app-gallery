@@ -64,15 +64,16 @@ export function createProviders(source: ProviderSources): Record<'claude' | 'cod
           if (!value) throw new Error('Invalid Claude usage window.');
           return { ...value, key, label: labels[key] ?? key };
         });
-        return { windows, reportedAt: null, sessions: r.sessions };
+        return { windows, reportedAt: r.reportedAt, sessions: r.sessions };
       },
       async readAccount() {
         const a = await source.claudeAccount();
         if (a.missing) return { kind: 'unavailable', reason: 'Claude Code is not installed or is not on Herdr\'s PATH.' };
         if (a.error) throw new Error(a.error);
-        if (a.loggedIn === false) return { kind: 'signed-out' };
+        const context = { configDirectory: a.configDirectory, projectsDirectory: a.projectsDirectory, identity: a.email ? `${a.email}|${a.orgId ?? ''}` : undefined };
+        if (a.loggedIn === false) return { kind: 'signed-out', context };
         if (a.loggedIn !== true) throw new Error('Unsupported Claude login status.');
-        return { kind: 'signed-in', method: a.authMethod ?? 'Claude', email: a.email, plan: a.subscriptionType, expiresAt: a.loginExpiresAt };
+        return { kind: 'signed-in', context, method: a.authMethod ?? 'Claude', email: a.email, plan: a.subscriptionType, expiresAt: a.loginExpiresAt };
       },
     },
     codex: {

@@ -1,6 +1,6 @@
 # token-usage
 
-Claude and Codex usage in one compact [Herdr](https://herdr.dev) panel, with shared account settings and an optional layout.
+Claude and Codex remaining allowance and reset times in one compact [Herdr](https://herdr.dev) panel, with shared account settings and an optional layout.
 
 A personal fork of PostHog's [Claude usage](https://github.com/PostHog/herdr/blob/main/claude-usage/RECIPE.md).
 

@@ -1,20 +1,13 @@
 // Generated from src/main.ts. Edit the TS source, then run npm run verify.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { appHome, exec, checking, theme, run, props, agents, spaces, home, openOverlay, closeOverlay, nextCommand, notify, playSound, shared, setShared } from "herdr";
-import { tapPath, auth, configDir, projectsDir, connection, connect, disconnect, upgrade, prune, clearReports, ensureDataDir, limits, sessionOf, findTranscript, Totals, modelName } from "./data.js";
-import { usageProviders, commonPeriod, usageValue } from "./usage-model.js";
-import { createProviders } from "./providers.js";
-import { Resource } from "./resource.js";
+import { checking, theme, run, props, agents, spaces, home, openOverlay, closeOverlay, nextCommand, notify, shared, setShared } from "herdr";
+import { tapPath, configDir, projectsDir, connect, disconnect, prune, ensureDataDir, sessionOf, findTranscript, Totals, modelName } from "./data.js";
+import { usageProviders, commonPeriod, usageValue, remainingValue, resetLabel } from "./usage-model.js";
+import { usageStore } from "./runtime.js";
 const ICON = (name) => `mods/token-usage/icons/${name}.svg`;
-const REFRESH_EVERY = 10000;
-const AUTH_EVERY = 300000;
 const SESSIONS_EVERY = 5000;
 const PREFS = "token-usage.prefs";
-const SEEN = "token-usage.seen";
-const ACCOUNT = "token-usage.account";
-const AUTH_WATCH = "token-usage.authWatch";
-const WATCH_FOR = 120000;
 const DEFAULTS = { warn: 80, urgent: 95, sound: true };
 const PLANS = { pro: "Claude Pro", max: "Claude Max", team: "Claude Team", enterprise: "Claude Enterprise", ultra: "Claude Ultra" };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -62,42 +55,21 @@ const tilde = (path) => (path.startsWith(home()) ? `~${path.slice(home().length)
 export default class ClaudeUsage extends View {
     overlay;
     page;
-    auth;
-    authAt = 0;
-    authError;
-    link;
-    original = "";
-    upgradeAt = 0;
-    data;
     rows;
     rowsError;
     totals;
     transcripts;
     busy;
     error;
-    failed;
     pending;
     pendingAction;
-    alerted;
     narrow = false;
-    adapters;
-    usageResources;
-    accounts;
+    store;
     init(_props, cx) {
         this.overlay = props()?.overlay ?? null;
         const requestedPage = props()?.page;
         this.page = requestedPage === "account" || requestedPage === "codex-account" ? requestedPage : "usage";
-        this.auth = null;
-        this.authAt = 0;
-        this.link = null;
-        this.original = "";
-        this.upgradeAt = 0;
-        this.data = null;
-        this.adapters = createProviders({ claudeUsage: limits, claudeAccount: auth,
-            codexUsage: () => this.readHelper("read_codex_usage.py"),
-            codexAccount: () => this.readHelper("read_codex_account.py") });
-        this.usageResources = { claude: new Resource(this.adapters.claude.readUsage), codex: new Resource(this.adapters.codex.readUsage) };
-        this.accounts = { claude: new Resource(this.adapters.claude.readAccount), codex: new Resource(this.adapters.codex.readAccount) };
+        this.store = usageStore();
         this.rows = null;
         this.rowsError = null;
         this.totals = new Totals();
@@ -105,23 +77,19 @@ export default class ClaudeUsage extends View {
         this.busy = {};
         this.error = null;
         this.pending = null;
-        this.alerted = new Set(JSON.parse(localStorage.getItem("alerted") ?? "[]"));
         if (checking())
             return;
-        cx.timer.every(REFRESH_EVERY, (cx) => this.refresh(cx));
-        cx.timer.every(60000, (cx) => cx.notify());
+        cx.timer.every(5000, cx => this.refresh(cx));
         if (this.overlay)
-            cx.timer.every(SESSIONS_EVERY, (cx) => this.refreshSessions(cx));
+            cx.timer.every(SESSIONS_EVERY, cx => this.refreshSessions(cx));
         else {
             ensureDataDir().then(() => prune()).catch(() => null);
             cx.timer.every(3600000, () => prune());
         }
-        this.refresh(cx, true);
-        this.refreshCodex(cx);
-        cx.timer.every(15000, (cx) => this.refreshCodex(cx));
+        this.refresh(cx);
         if (this.overlay && this.page !== "usage")
             this.refreshAccount(cx, this.page === "account" ? "claude" : "codex");
-        cx.timer.every(10000, (cx) => {
+        cx.timer.every(10000, cx => {
             if (this.overlay && this.page !== "usage")
                 this.refreshAccount(cx, this.page === "account" ? "claude" : "codex");
         });
@@ -138,112 +106,21 @@ export default class ClaudeUsage extends View {
             }
         });
     }
-    refresh(cx, first = false) {
-        if (this.busy.refresh)
-            return;
-        this.busy.refresh = true;
-        cx.spawn(async (cx) => {
-            try {
-                const unsure = this.authError || Date.now() < (shared(AUTH_WATCH) ?? 0) || (this.auth && (this.auth.loggedIn === false || this.auth.missing));
-                if (first || Date.now() - this.authAt > (unsure ? REFRESH_EVERY : AUTH_EVERY)) {
-                    const a = await auth();
-                    this.authAt = Date.now();
-                    if (a.error && !a.missing) {
-                        this.authError = a.error;
-                    }
-                    else {
-                        this.auth = a;
-                        this.authError = null;
-                        if (!this.overlay)
-                            await this.checkAccount();
-                    }
-                }
-                if (this.auth && !this.auth.missing) {
-                    try {
-                        const dir = configDir(this.auth);
-                        this.link = await connection(dir);
-                        if (this.link.legacy && Date.now() - this.upgradeAt > AUTH_EVERY) {
-                            this.upgradeAt = Date.now();
-                            await upgrade(dir).catch(() => null);
-                            this.link = await connection(dir);
-                        }
-                        this.original = this.link.connected ? (this.link.command ?? this.link.settings.statusLine.command) : (this.link.settings?.statusLine?.command ?? "");
-                    }
-                    catch (e) {
-                        this.link = { error: String(e instanceof Error ? e.message : e) };
-                    }
-                }
-                await this.usageResources.claude.refresh();
-                if (this.usageResources.claude.error)
-                    throw new Error(this.usageResources.claude.error);
-                this.data = this.usageResources.claude.value;
-                this.remember();
-                if (!this.overlay && this.state().kind === "ok")
-                    this.alert();
-                if (first && this.overlay)
-                    this.refreshSessions(cx);
-                this.failed = null;
-            }
-            catch (e) {
-                this.failed = String(e instanceof Error ? e.message : e);
-            }
-            finally {
-                this.busy.refresh = false;
-                cx.notify();
-            }
-        });
-    }
-    remember() {
-        const sig = JSON.stringify(this.data?.windows ?? {});
-        const seen = shared(SEEN);
-        if (this.overlay || (seen?.sig === sig && seen?.at))
-            return;
-        setShared(SEEN, { sig, at: Date.now() });
-    }
-    alert() {
-        const { warn, urgent, sound } = prefs();
-        for (const v of this.data?.windows ?? []) {
-            if (!v || v.resets * 1000 <= Date.now())
-                continue;
-            const level = v.used >= urgent ? "urgent" : v.used >= warn ? "warn" : null;
-            if (!level)
-                continue;
-            const key = `${v.key}:${v.resets}:${level}`;
-            if (this.alerted.has(key))
-                continue;
-            this.alerted.add(key);
-            this.alerted.add(`${v.key}:${v.resets}:warn`);
-            notify({
-                title: `${v.label} Claude limit at ${Math.round(v.used)}%`,
-                body: `${resetText(v.resets).replace(/^r/, "R")}.`,
-                level: level === "urgent" ? "error" : "warning",
-                timeout: 10000,
-                action: { name: "token-usage.settings" },
-            });
-            if (sound && level === "urgent")
-                playSound("blocked");
-        }
-        localStorage.setItem("alerted", JSON.stringify([...this.alerted].slice(-40)));
-    }
-    async checkAccount() {
-        const a = this.auth;
-        if (!a || a.missing || a.loggedIn === false)
-            return;
-        const who = `${a.email ?? ""}|${a.orgId ?? ""}`;
-        const last = shared(ACCOUNT);
-        if (last === who)
-            return;
-        if (last)
-            await clearReports();
-        setShared(ACCOUNT, who);
+    get data() { return this.store.usage.claude.value; }
+    get link() { return this.store.connection.value; }
+    get original() { return this.link?.command ?? this.link?.settings?.statusLine?.command ?? ""; }
+    claudeContext() { return this.store.accounts.claude.value?.context ?? {}; }
+    refresh(cx) {
+        const store = this.store;
+        cx.spawn(async () => { await store.poll(); }, { owner: null });
     }
     refreshSessions(cx) {
-        if (this.busy.sessions || this.page !== "usage" || !this.auth || this.auth.missing)
+        if (this.busy.sessions || this.page !== "usage" || this.store.accounts.claude.value?.kind !== "signed-in")
             return;
         this.busy.sessions = true;
         cx.spawn(async (cx) => {
             try {
-                const dir = configDir(this.auth);
+                const dir = configDir(this.claudeContext());
                 const prev = new Map((this.rows ?? []).map((r) => [r.address, r]));
                 const rows = [];
                 let failed = 0;
@@ -254,7 +131,7 @@ export default class ClaudeUsage extends View {
                             continue;
                         let transcript = this.data?.sessions.get(sid)?.transcript ?? this.transcripts.get(sid);
                         if (!transcript) {
-                            transcript = await findTranscript(projectsDir(this.auth), sid);
+                            transcript = await findTranscript(projectsDir(this.claudeContext()), sid);
                             if (transcript)
                                 this.transcripts.set(sid, transcript);
                         }
@@ -291,17 +168,17 @@ export default class ClaudeUsage extends View {
         this.pending = null;
         this.pendingAction = null;
         if (action === "codexlogout") {
-            this.startAgent(this.adapters.codex.logout.name, this.adapters.codex.logout.argv);
+            this.startAgent(this.store.providers.codex.logout.name, this.store.providers.codex.logout.argv);
             return;
         }
         if (action === "logout") {
-            this.startClaude(this.adapters.claude.logout.name, this.adapters.claude.logout.argv);
+            this.startClaude(this.store.providers.claude.logout.name, this.store.providers.claude.logout.argv);
             return;
         }
         this.busy.link = true;
         cx.notify();
         try {
-            const dir = configDir(this.auth);
+            const dir = configDir(this.claudeContext());
             if (action === "connect")
                 await connect(dir);
             else if (action === "disconnect")
@@ -322,15 +199,16 @@ export default class ClaudeUsage extends View {
         }
         finally {
             this.busy.link = false;
+            await this.store.connectionChanged();
             this.refresh(cx);
         }
     }
     startClaude(name, argv) {
-        this.authAt = 0;
-        setShared(AUTH_WATCH, Date.now() + WATCH_FOR);
+        this.store.watchAccount("claude");
         this.startAgent(name, argv);
     }
     startAgent(name, argv) {
+        this.store.watchAccount(argv[0] === "claude" ? "claude" : "codex");
         const local = spaces().find((s) => s.machine == null && s.active) ?? spaces().find((s) => s.machine == null);
         if (local)
             run("tab.new", { name, space: local.id, argv });
@@ -360,87 +238,53 @@ export default class ClaudeUsage extends View {
         })
             .child(label);
     }
-    bar(t, used, h) {
-        const pct = Math.max(0, Math.min(100, used));
+    bar(t, amount, h, used = amount) {
+        const pct = Math.max(0, Math.min(100, amount));
         return div().flex_1().min_w(0).h(h).rounded(h / 2).bg(t.selected).overflow_hidden()
             .child(div().w(`${pct}%`).h(h).bg(this.color(t, used)));
-    }
-    state() {
-        const a = this.auth;
-        if (!a && this.authError)
-            return { kind: "error", text: `Couldn't read Claude Code's sign-in: ${this.authError}` };
-        if (!a)
-            return { kind: "loading", text: "Checking Claude Code." };
-        if (a.missing)
-            return { kind: "missing", text: "Claude Code isn't installed here." };
-        if (a.loggedIn === false)
-            return { kind: "signedout", text: "Claude Code is signed out." };
-        const windows = this.data?.windows ?? [];
-        const has = windows.length > 0;
-        if (this.link?.error)
-            return { kind: "error", text: this.link.error };
-        if (!this.link?.connected)
-            return { kind: "unlinked", text: "Connect Claude Code to see your plan limits here." };
-        if (!has && a.authMethod && a.authMethod !== "claude.ai")
-            return { kind: "nolimits", text: "This login has no plan limits. Session tokens still show in Settings." };
-        if (!has)
-            return { kind: "waiting", text: "Your limits arrive with your next Claude reply." };
-        return { kind: "ok" };
     }
     render(cx) {
         const t = theme();
         return this.overlay ? this.renderSettings(t, cx) : this.renderStrip(t, cx);
     }
-    async readHelper(file) {
-        const args = [`${appHome()}/mods/token-usage/${file}`];
-        if (file === "read_codex_usage.py")
-            args.push("--cache", `${appHome()}/data/token-usage/codex-cache.json`);
-        const r = await exec("python3", args, { timeout: 10000 });
-        if (r.code !== 0)
-            throw new Error("Could not read local provider state.");
-        return JSON.parse(r.stdout);
-    }
-    refreshResource(cx, resource) {
-        cx.spawn(async (cx) => { await resource.refresh(); cx.notify(); });
-    }
-    refreshCodex(cx) { this.refreshResource(cx, this.usageResources.codex); }
     providers() {
-        return usageProviders({ state: this.state(), report: this.data,
-            at: shared(SEEN)?.at, error: this.failed || this.authError || this.link?.error }, this.usageResources.codex);
+        return usageProviders(Object.values(this.store.providers).map(provider => ({ provider,
+            account: this.store.accounts[provider.id], usage: this.store.usage[provider.id],
+            connection: provider.id === "claude" ? this.store.connection : undefined })));
     }
     providerTip(p) {
         return [p.detail, p.at ? `Updated ${ago(Date.now() - p.at)}.` : null, p.error,
-            ...p.windows.map(w => `${w.label}: ${usageValue(w)}, ${resetText(w.resets, true)}`)].filter(Boolean).join("\n");
+            ...p.windows.map(w => `${w.label}: ${remainingValue(w)} left (${usageValue(w)} used), ${resetText(w.resets, true)}`)].filter(Boolean).join("\n");
     }
     providerRows(t, p, period, detail = false) {
         const nameWidth = detail ? 110 : 44;
         if (!p.windows.length)
-            return [h_flex().items_center().gap(8).h(32)
+            return [h_flex().items_center().gap(8).h(26)
                     .child(div().w(nameWidth).flex_none().text_color(t.foreground).child(p.name))
                     .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(p.error ? t.working : t.muted).child(p.message))];
         return p.windows.map((w, i) => {
-            const reset = w.resets * 1000 <= Date.now();
-            const note = p.error ? "Refresh failed" : `${period ? "" : `${w.label} · `}${resetText(w.resets)}${p.stale ? " · stale" : ""}`;
-            return v_flex().id(`usage-${p.id}-${w.key}`).gap(2).tooltip(this.providerTip(p))
-                .child(h_flex().h(18).items_center().gap(8)
-                .child(div().w(nameWidth).flex_none().truncate().text_color(t.foreground).child(i ? "" : p.name))
-                .child(this.bar(t, reset ? 0 : w.used, 3).when(p.stale || Boolean(p.error), el => el.opacity(0.5)))
+            const expired = w.resets * 1000 <= Date.now();
+            const status = [!period ? w.label : null, p.error ? "Error" : p.stale ? "Stale" : null].filter(Boolean).join(" · ");
+            return h_flex().id(`usage-${p.id}-${w.key}`).h(status ? 32 : 22).items_center().gap(8).tooltip(this.providerTip(p))
+                .child(v_flex().w(nameWidth).flex_none().gap(1)
+                .child(div().truncate().text_color(t.foreground).child(i ? "" : p.name))
+                .when(Boolean(status), el => el.child(div().truncate().text_size(10).text_color(p.error ? t.working : t.muted).child(status))))
+                .child(this.bar(t, expired ? 0 : 100 - w.used, 3, w.used).when(p.stale || Boolean(p.error), el => el.opacity(0.5)))
                 .child(div().w(32).flex_none().text_right().font_medium()
-                .text_color(reset ? t.muted : w.used >= prefs().warn ? this.color(t, w.used) : t.foreground)
-                .child(usageValue(w))))
-                .child(div().pl(nameWidth + 8).h(13).line_height("13px").truncate().text_size(10.5)
-                .text_color(p.error ? t.working : t.muted).child(note));
+                .text_color(expired ? t.muted : w.used >= prefs().warn ? this.color(t, w.used) : t.foreground).child(remainingValue(w)))
+                .child(div().w(64).flex_none().text_right().text_size(11).text_color(t.muted).child(resetLabel(w.resets)));
         });
     }
     usageOverview(t, providers, detail = false) {
         const period = commonPeriod(providers);
-        return v_flex().gap(detail ? 10 : 8).text_size(12)
+        return v_flex().gap(detail ? 8 : 6).text_size(12)
             .child(h_flex().h(18).items_center().gap(6)
-            .child(div().text_size(11).text_color(t.muted).child(period ? `Usage · ${period}` : "Usage"))
-            .child(div().flex_1())
+            .child(div().text_size(11).text_color(t.muted).child(period ? `${period} left` : "Remaining"))
             .when(!detail, el => el.child(div().id("cu-gear").cursor_pointer().tooltip("Usage settings")
             .on_click((e, cx) => { cx.stop_propagation(); this.openSettings("usage"); })
-            .child(this.icon("settings", t.muted, 12)))))
+            .child(this.icon("settings", t.muted, 12))))
+            .child(div().flex_1())
+            .child(div().w(64).text_right().text_size(11).text_color(t.muted).child("Resets")))
             .children(providers.flatMap(p => this.providerRows(t, p, period, detail)));
     }
     renderStrip(t, cx) {
@@ -450,7 +294,7 @@ export default class ClaudeUsage extends View {
                 .on_click(() => this.openSettings("usage"))
                 .children(providers.map(p => v_flex().id(`rail-${p.id}`).items_center().gap(2).tooltip(this.providerTip(p))
                 .child(div().text_size(10).text_color(t.muted).child(p.name))
-                .children(p.windows.length ? p.windows.map(w => div().text_size(12).text_color(t.foreground).child(usageValue(w)))
+                .children(p.windows.length ? p.windows.map(w => div().text_size(12).text_color(t.foreground).child(remainingValue(w)))
                 : [div().text_size(11).text_color(t.muted).child("--")]))));
         }
         return this.sized(v_flex().id("cu-root").size_full().px(16).pb(8).cursor_pointer()
@@ -466,10 +310,13 @@ export default class ClaudeUsage extends View {
             }
         });
     }
-    refreshAccount(cx, id) { this.refreshResource(cx, this.accounts[id]); }
+    refreshAccount(cx, id, force = false) {
+        const store = this.store;
+        cx.spawn(async () => { await store.refreshAccount(id, force); }, { owner: null });
+    }
     renderAccount(t, id) {
-        const provider = this.adapters[id];
-        const resource = this.accounts[id];
+        const provider = this.store.providers[id];
+        const resource = this.store.accounts[id];
         const account = resource.value;
         const content = this.box(t);
         if (resource.error)
@@ -492,7 +339,7 @@ export default class ClaudeUsage extends View {
                 ? this.button(t, `${id}-logout`, "Log out", () => this.ask(id === "claude" ? "logout" : "codexlogout", `Log out of ${provider.name}?`, `Runs ${provider.logout.argv.join(" ")} on this computer and removes its stored sign-in.`))
                 : this.button(t, `${id}-login`, "Log in", () => id === "claude" ? this.startClaude(provider.login.name, provider.login.argv) : this.startAgent(provider.login.name, provider.login.argv), true)));
         }
-        content.child(h_flex().child(this.button(t, `${id}-refresh`, resource.loading ? "Checking…" : "Refresh", cx => this.refreshAccount(cx, id))));
+        content.child(h_flex().child(this.button(t, `${id}-refresh`, resource.loading ? "Checking…" : "Refresh", cx => this.refreshAccount(cx, id, true))));
         const sections = [v_flex().gap(8).child(this.heading(t, "Sign-in")).child(content)];
         if (id === "claude")
             sections.push(this.connectionSection(t));
@@ -572,7 +419,7 @@ export default class ClaudeUsage extends View {
             .child(this.button(t, `${id}-up`, "+", () => set({ [key]: Math.min(max, value + 5) })));
         return [
             this.usageOverview(t, this.providers(), true),
-            ...(["unlinked", "signedout"].includes(this.state().kind) ? [h_flex().child(this.button(t, "usage-connect", this.state().kind === "unlinked" ? "Connect Claude" : "Log in to Claude", () => this.state().kind === "unlinked" ? this.askConnect() : this.startClaude("Claude login", ["claude", "auth", "login"]), true))] : []),
+            ...(["unlinked", "signedout"].includes(this.providers()[0].status) ? [h_flex().child(this.button(t, "usage-connect", this.providers()[0].status === "unlinked" ? "Connect Claude" : "Log in to Claude", () => this.providers()[0].status === "unlinked" ? this.askConnect() : this.startClaude("Claude login", ["claude", "auth", "login"]), true))] : []),
             v_flex().gap(4).child(this.heading(t, "Claude sessions on this computer")).when(Boolean(rows.length), el => el.child(v_flex().pt(6).child(head).children(rows)))
                 .when(!rows.length && !this.rowsError, (el) => el.child(div().py(8).text_size(12).text_color(t.muted).child(empty)))
                 .when(Boolean(this.rowsError), (el) => el.child(div().py(8).text_size(12).text_color(t.blocked).child(this.rowsError)))
@@ -611,7 +458,7 @@ export default class ClaudeUsage extends View {
                 .child(h_flex().gap(8).child(div().w(72).flex_none().text_color(t.muted).child("then runs")).child(div().truncate().child(this.original || "nothing, you have no statusline"))))
                 .child(div().text_size(12).text_color(t.muted).child(`It edits ${tilde(l.path)}. Edit your command there, and Disconnect keeps your edit.`));
         }
-        for (const e of [this.error, this.failed].filter(Boolean))
+        for (const e of [this.error, this.store.connection.error].filter(Boolean))
             link.child(div().text_size(12).text_color(t.blocked).child(e));
         return v_flex().gap(10).child(this.heading(t, "Claude Code connection")).child(link);
     }
