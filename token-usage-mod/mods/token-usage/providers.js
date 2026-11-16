@@ -1,6 +1,5 @@
 // Generated from src/providers.ts. Edit the TS source, then run npm run verify.
-const object = (value) => typeof value === 'object' && value !== null && !Array.isArray(value) ? value : null;
-const finite = (n) => typeof n === 'number' && Number.isFinite(n);
+import { finite, object } from './json.js';
 export function periodLabel(minutes) {
     if (minutes === 10080)
         return 'Week';
@@ -35,7 +34,11 @@ export function decodeCodexUsage(raw) {
             if (!w || !value || !finite(w.minutes) || w.minutes <= 0 || typeof w.key !== 'string')
                 throw new Error('Invalid Codex usage window.');
             const label = periodLabel(w.minutes);
-            windows.push({ ...value, key: `${String(s.limit_id ?? 'codex')}:${w.key}`, label: s.limit_id && s.limit_id !== 'codex' ? `${String(s.name ?? s.limit_id)} · ${label}` : label });
+            windows.push({
+                ...value,
+                key: `${String(s.limit_id ?? 'codex')}:${w.key}`,
+                label: s.limit_id && s.limit_id !== 'codex' ? `${String(s.name ?? s.limit_id)} · ${label}` : label,
+            });
         }
     }
     return { windows, reportedAt, sessions: new Map() };
@@ -45,7 +48,7 @@ export function decodeCodexAccount(raw) {
     if (!a)
         throw new Error('Unsupported Codex account response.');
     if (a.missing === true)
-        return { kind: 'unavailable', reason: 'Codex is not installed or is not on Herdr\'s PATH.' };
+        return { kind: 'unavailable', reason: "Codex is not installed or is not on Herdr's PATH." };
     if (a.error)
         throw new Error('Could not check Codex sign-in. Run codex login status in a terminal.');
     if (a.loggedIn === false)
@@ -54,11 +57,11 @@ export function decodeCodexAccount(raw) {
         return { kind: 'signed-in', method: a.method };
     throw new Error('Unsupported Codex login status.');
 }
-/** Provider differences end here; consumers use UsageProvider only. */
 export function createProviders(source) {
     return {
         claude: {
-            id: 'claude', name: 'Claude',
+            id: 'claude',
+            name: 'Claude',
             login: { name: 'Claude login', argv: ['claude', 'auth', 'login'] },
             logout: { name: 'Claude logout', argv: ['claude', 'auth', 'logout'] },
             async readUsage() {
@@ -75,23 +78,39 @@ export function createProviders(source) {
             async readAccount() {
                 const a = await source.claudeAccount();
                 if (a.missing)
-                    return { kind: 'unavailable', reason: 'Claude Code is not installed or is not on Herdr\'s PATH.' };
+                    return { kind: 'unavailable', reason: "Claude Code is not installed or is not on Herdr's PATH." };
                 if (a.error)
                     throw new Error(a.error);
-                const context = { configDirectory: a.configDirectory, projectsDirectory: a.projectsDirectory, identity: a.email ? `${a.email}|${a.orgId ?? ''}` : undefined };
+                const context = {
+                    configDirectory: a.configDirectory,
+                    projectsDirectory: a.projectsDirectory,
+                    identity: a.email ? `${a.email}|${a.orgId ?? ''}` : undefined,
+                };
                 if (a.loggedIn === false)
                     return { kind: 'signed-out', context };
                 if (a.loggedIn !== true)
                     throw new Error('Unsupported Claude login status.');
-                return { kind: 'signed-in', context, method: a.authMethod ?? 'Claude', email: a.email, plan: a.subscriptionType, expiresAt: a.loginExpiresAt };
+                return {
+                    kind: 'signed-in',
+                    context,
+                    method: a.authMethod ?? 'Claude',
+                    email: a.email,
+                    plan: a.subscriptionType,
+                    expiresAt: a.loginExpiresAt,
+                };
             },
         },
         codex: {
-            id: 'codex', name: 'Codex',
+            id: 'codex',
+            name: 'Codex',
             login: { name: 'Codex login', argv: ['codex', 'login'] },
             logout: { name: 'Codex logout', argv: ['codex', 'logout'] },
-            async readUsage() { return decodeCodexUsage(await source.codexUsage()); },
-            async readAccount() { return decodeCodexAccount(await source.codexAccount()); },
+            async readUsage() {
+                return decodeCodexUsage(await source.codexUsage());
+            },
+            async readAccount() {
+                return decodeCodexAccount(await source.codexAccount());
+            },
         },
     };
 }

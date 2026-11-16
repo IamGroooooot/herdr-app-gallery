@@ -1,6 +1,5 @@
 // Generated from src/store.ts. Edit the TS source, then run npm run verify.
 import { Resource } from './resource.js';
-/** One store per mod source version; views own timers, never provider state. */
 export class UsageStore {
     providers;
     clock;
@@ -33,7 +32,7 @@ export class UsageStore {
             }
             if (identity) {
                 this.lastIdentity[id] = identity;
-                if (id === "claude")
+                if (id === 'claude')
                     io.claudeIdentity?.write(identity);
             }
             return next;
@@ -62,7 +61,9 @@ export class UsageStore {
         if (id === 'claude')
             await this.connection.refresh(force ? 0 : 10000);
     }
-    watchAccount(id) { this.watchUntil[id] = this.clock() + 120000; }
+    watchAccount(id) {
+        this.watchUntil[id] = this.clock() + 120000;
+    }
     async connectionChanged() {
         this.connection.invalidate();
         await this.connection.refresh();

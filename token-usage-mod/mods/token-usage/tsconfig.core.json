@@ -6,6 +6,10 @@
   },
   "include": [
     "src/types.ts",
+    "src/json.ts",
+    "src/system.ts",
+    "src/codex.ts",
+    "src/reports.ts",
     "src/resource.ts",
     "src/providers.ts",
     "src/usage-model.ts",

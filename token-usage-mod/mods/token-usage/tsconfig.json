@@ -9,6 +9,11 @@
     "strict": true,
     "strictNullChecks": false,
     "noEmitOnError": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
     "rootDir": "src",
     "outDir": "."

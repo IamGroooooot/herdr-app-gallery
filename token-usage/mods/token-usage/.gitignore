@@ -1,4 +1,2 @@
 node_modules/
-__pycache__/
-*.pyc
 gpui-kit.d.ts

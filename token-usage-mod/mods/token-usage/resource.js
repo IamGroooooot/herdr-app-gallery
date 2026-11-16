@@ -1,5 +1,4 @@
 // Generated from src/resource.ts. Edit the TS source, then run npm run verify.
-/** A shared, single-flight read with TTL, last-good data and invalidation. */
 export class Resource {
     read;
     clock;
@@ -24,7 +23,9 @@ export class Resource {
         this.attemptedAt = this.clock();
         this.loading = true;
         const generation = this.generation;
-        this.pending = Promise.resolve().then(this.read).then(value => {
+        this.pending = Promise.resolve()
+            .then(this.read)
+            .then(value => {
             if (generation !== this.generation)
                 return;
             this.value = value;
@@ -33,7 +34,8 @@ export class Resource {
         }, error => {
             if (generation === this.generation)
                 this.error = error instanceof Error ? error.message : 'Could not refresh.';
-        }).finally(() => {
+        })
+            .finally(() => {
             this.loading = false;
             this.pending = null;
             this.changed();

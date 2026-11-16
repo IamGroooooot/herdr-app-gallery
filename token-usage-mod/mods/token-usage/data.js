@@ -1,17 +1,19 @@
 // Generated from src/data.ts. Edit the TS source, then run npm run verify.
-import { exec, hc, home, appHome, readTextFile } from "herdr";
-import * as fs from "fs/promises";
+import * as fs from 'fs/promises';
+import { appHome, exec, hc, home, readTextFile, writeTextFile } from 'herdr';
+import { decodeReports } from './reports.js';
+import { createSystem } from './system.js';
+export const system = createSystem(exec, process.platform);
 export const dataDir = () => `${appHome()}/data/token-usage`;
 export const tapPath = () => `${appHome()}/mods/token-usage/tap.sh`;
 const CHUNK = 4 * 1024 * 1024;
-const KEEP_DAYS = 8;
 export const WINDOWS = [
-    { key: "five_hour", label: "5h", long: "5 hours", title: "5-hour Claude limit" },
-    { key: "seven_day", label: "week", long: "Week", title: "Weekly Claude limit" },
-    { key: "spend_limit", label: "spend", long: "Spend", title: "Claude spend limit" },
+    { key: 'five_hour', label: '5h', long: '5 hours', title: '5-hour Claude limit' },
+    { key: 'seven_day', label: 'week', long: 'Week', title: 'Weekly Claude limit' },
+    { key: 'spend_limit', label: 'spend', long: 'Spend', title: 'Claude spend limit' },
 ];
 const parse = (text) => {
-    if (text == null || text === "")
+    if (text == null || text === '')
         return null;
     try {
         return JSON.parse(text);
@@ -38,23 +40,20 @@ export function utf8Len(s) {
     }
     return n;
 }
-async function envConfigDir() {
-    const r = await exec("/bin/sh", ["-c", 'printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"']).catch(() => null);
-    return r?.code === 0 && r.stdout ? r.stdout : null;
-}
 export async function ensureDataDir() {
-    await exec("/bin/sh", ["-c", 'umask 077; mkdir -p "$1/sessions" && chmod 700 "$1"', "sh", dataDir()]);
+    await fs.mkdir(`${dataDir()}/sessions`, { recursive: true });
+    await system.restrict(dataDir());
 }
 export async function auth() {
     try {
-        const r = await exec("claude", ["auth", "status", "--json"]);
+        const r = await exec('claude', ['auth', 'status', '--json']);
         const s = parse(r.stdout.trim());
-        if (s && typeof s === "object") {
+        if (s && typeof s === 'object') {
             if (!s.configDirectory)
-                s.configDirectory = await envConfigDir();
+                s.configDirectory = (await system.claudeConfigDir()) ?? undefined;
             return s;
         }
-        return { error: (r.stderr || r.stdout).trim().split("\n").pop() || `claude exited ${r.code}` };
+        return { error: (r.stderr || r.stdout).trim().split('\n').pop() || `claude exited ${r.code}` };
     }
     catch (e) {
         return { missing: true, error: String(e instanceof Error ? e.message : e) };
@@ -64,16 +63,16 @@ export const configDir = (a) => a?.configDirectory || `${home()}/.claude`;
 export const projectsDir = (a) => a?.projectsDirectory || `${configDir(a)}/projects`;
 const tee = () => `{ [ -f ${shq(tapPath())} ] && sh ${shq(tapPath())} --tee || cat; }`;
 const opening = () => `${tee()} | {\n`;
-const CLOSING = "\n}";
+const CLOSING = '\n}';
 const tapOnly = () => `${tee()} >/dev/null`;
 const legacyOpening = () => `[ -f ${shq(tapPath())} ] && exec sh ${shq(tapPath())}`;
 export const wrap = (command) => (command ? `${opening()}${command}${CLOSING}` : tapOnly());
 export function unwrap(command, dir) {
-    if (typeof command !== "string")
+    if (typeof command !== 'string')
         return null;
     const text = command.trimEnd();
     if (text === tapOnly())
-        return "";
+        return '';
     if (text.startsWith(opening()) && text.endsWith(CLOSING) && text.length > opening().length + CLOSING.length) {
         return text.slice(opening().length, -CLOSING.length);
     }
@@ -82,62 +81,47 @@ export function unwrap(command, dir) {
         const arg = ` ${shq(backupDir(dir))}`;
         if (rest.startsWith(arg))
             rest = rest.slice(arg.length);
-        if (rest.startsWith("; "))
+        if (rest.startsWith('; '))
             return rest.slice(2);
     }
     return null;
 }
 async function legacySaved(dir) {
-    const text = (await readTextFile(`${backupDir(dir)}/original-statusline.json`)) ?? (await readTextFile(`${dataDir()}/original-statusline.json`));
+    const text = (await readTextFile(`${backupDir(dir)}/original-statusline.json`)) ??
+        (await readTextFile(`${dataDir()}/original-statusline.json`));
     return parse(text);
 }
 export async function connection(dir) {
     const path = `${dir}/settings.json`;
     const text = await readTextFile(path);
     const settings = text == null ? {} : parse(text);
-    if (!settings || typeof settings !== "object" || Array.isArray(settings))
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings))
         return { path, error: `${path} is not valid JSON` };
     const command = settings.statusLine?.command;
-    const connected = typeof command === "string" && command.includes("/mods/token-usage/tap.sh");
+    const connected = typeof command === 'string' && command.includes('/mods/token-usage/tap.sh');
     let own = connected ? unwrap(command, dir) : null;
     const legacy = own != null && command.trimEnd() !== tapOnly() && !command.startsWith(opening());
-    if (legacy && own === "true" && (await legacySaved(dir))?.command !== "true")
-        own = "";
+    if (legacy && own === 'true' && (await legacySaved(dir))?.command !== 'true')
+        own = '';
     return { path, text, settings, connected, command: own, legacy };
 }
-const REPLACE = [
-    'src="$1"; t="$2"; new=""',
-    'trap \'rm -f "$src" "$new"\' EXIT',
-    'n=0',
-    'while [ -L "$t" ] && [ "$n" -lt 40 ]; do',
-    '  l="$(readlink "$t")"',
-    '  case "$l" in /*) t="$l" ;; *) t="$(dirname "$t")/$l" ;; esac',
-    '  n=$((n + 1))',
-    'done',
-    'new="$(mktemp "$t.XXXXXX")" || exit 1',
-    'cat "$src" > "$new" || exit 1',
-    'if [ -e "$t" ]; then',
-    '  case "$(uname)" in Darwin) mode="$(stat -f %Lp "$t")" ;; *) mode="$(stat -c %a "$t")" ;; esac',
-    '  chmod "$mode" "$new" || exit 1',
-    'fi',
-    'mv -f "$new" "$t"',
-].join("\n");
+/** Herdr's write keeps the file's mode and symlink. */
 async function writeThrough(path, before, text) {
-    const now = await readTextFile(path);
-    if (now !== before)
-        throw new Error("Claude Code's settings changed while this ran. Try again.");
-    await ensureDataDir();
-    const tmp = `${dataDir()}/settings-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.json`;
-    await fs.writeFile(tmp, text);
-    const r = await exec("/bin/sh", ["-c", REPLACE, "sh", tmp, path]);
-    if (r.code !== 0)
-        throw new Error(r.stderr.trim() || `Couldn't write ${path}`);
+    try {
+        await writeTextFile(path, text, before);
+    }
+    catch (e) {
+        const reason = String(e instanceof Error ? e.message : e);
+        throw new Error(/changed outside/i.test(reason)
+            ? "Claude Code's settings changed while this ran. Try again."
+            : reason || `Couldn't write ${path}`);
+    }
 }
 const pretty = (o) => `${JSON.stringify(o, null, 2)}\n`;
-export const backupDir = (dir) => `${dataDir()}/configs/${String(dir).replace(/[^A-Za-z0-9_-]/g, "_")}`;
+export const backupDir = (dir) => `${dataDir()}/configs/${String(dir).replace(/[^A-Za-z0-9_-]/g, '_')}`;
 async function forgetLegacy(dir) {
     const b = backupDir(dir);
-    for (const name of ["original-command", "original-statusline.json"])
+    for (const name of ['original-command', 'original-statusline.json'])
         await fs.unlink(`${b}/${name}`).catch(() => null);
     await fs.rmdir(b).catch(() => null);
 }
@@ -148,8 +132,8 @@ export async function connect(dir) {
     if (c.connected)
         return;
     const original = c.settings.statusLine ?? null;
-    const command = original?.type === "command" && typeof original.command === "string" ? original.command : "";
-    const statusLine = { ...(original ?? {}), type: "command", command: wrap(original ? command || "true" : "") };
+    const command = original?.type === 'command' && typeof original.command === 'string' ? original.command : '';
+    const statusLine = { ...(original ?? {}), type: 'command', command: wrap(original ? command || 'true' : '') };
     await writeThrough(c.path, c.text, pretty({ ...c.settings, statusLine }));
 }
 export async function upgrade(dir) {
@@ -175,23 +159,27 @@ export async function disconnect(dir) {
     await writeThrough(c.path, c.text, pretty(next));
     await forgetLegacy(dir);
 }
+const reportsDir = () => `${dataDir()}/sessions`;
+async function readReports(projects) {
+    const names = (await fs.readdir(reportsDir()).catch(() => [])).filter(n => n.endsWith('.json') && !n.startsWith('.'));
+    const files = await Promise.all(names.map(async (name) => ({ name, text: await readTextFile(`${reportsDir()}/${name}`).catch(() => null) })));
+    return { names, ...decodeReports(files, Date.now(), projects) };
+}
+const removeReports = (names) => Promise.all(names.map(name => fs.unlink(`${reportsDir()}/${name}`).catch(() => null)));
 export async function clearReports() {
-    await exec("find", [`${dataDir()}/sessions`, "-name", "*.json", "-delete"]).catch(() => null);
+    await removeReports((await readReports()).names);
 }
 export async function prune() {
-    await exec("find", [`${dataDir()}/sessions`, "-name", "*.json", "-mtime", `+${KEEP_DAYS}`, "-delete"]).catch(() => null);
+    await removeReports((await readReports()).expired);
 }
-export async function limits() {
-    const result = await exec("python3", [`${appHome()}/mods/token-usage/read_claude_usage.py`, `${dataDir()}/sessions`], { timeout: 10000 });
-    if (result.code !== 0)
-        throw new Error("Could not read Claude usage reports.");
-    const report = JSON.parse(result.stdout);
-    if (report.error)
-        throw new Error(report.error);
-    return { windows: report.windows, sessions: new Map(Object.entries(report.sessions)), reports: report.reports, reportedAt: report.reportedAt };
+export async function limits(projects) {
+    const { limits, failures } = await readReports(projects);
+    if (failures)
+        throw new Error(`Could not read ${failures} Claude reports.`);
+    return limits;
 }
 export async function sessionOf(address, dir) {
-    const r = await hc(["get", address, "--json"]);
+    const r = await hc(['get', address, '--json']);
     const pid = parse(r.stdout)?.foreground?.pid;
     if (!pid)
         return null;
@@ -212,19 +200,6 @@ export async function findTranscript(dir, sid) {
     }
     return null;
 }
-const READ = [
-    '[ -r "$1" ] || exit 3',
-    'size="$(wc -c < "$1" | tr -d " ")" || exit 3',
-    '[ -n "$size" ] || exit 3',
-    'printf "%s\\n" "$size"',
-    'tail -c +"$2" "$1" | head -c "$3"',
-].join("\n");
-const LINE_END = [
-    'n="$(tail -c +"$2" "$1" | head -n 1 | wc -c | tr -d " ")" || exit 3',
-    '[ -n "$n" ] && [ "$n" -gt 0 ] || exit 3',
-    '[ "$(tail -c +"$(($2 + n - 1))" "$1" | head -c 1 | wc -l | tr -d " ")" = 1 ] || exit 4',
-    'printf "%s\\n" "$n"',
-].join("\n");
 const fresh = () => ({ offset: 0, seen: new Set(), output: 0, input: 0, cacheRead: 0, model: null });
 export class Totals {
     files;
@@ -232,16 +207,18 @@ export class Totals {
         this.files = new Map();
     }
     async of(transcript) {
-        const base = transcript.replace(/\.jsonl$/, "");
+        const base = transcript.replace(/\.jsonl$/, '');
         let subs = [];
         try {
-            subs = (await fs.readdir(`${base}/subagents`)).filter((n) => n.endsWith(".jsonl")).map((n) => `${base}/subagents/${n}`);
+            subs = (await fs.readdir(`${base}/subagents`))
+                .filter(n => n.endsWith('.jsonl'))
+                .map(n => `${base}/subagents/${n}`);
         }
         catch {
             subs = [];
         }
         const files = [transcript, ...subs];
-        const sizes = await this.sizes(files);
+        const sizes = await system.sizes(files);
         const sum = { output: 0, input: 0, cacheRead: 0, model: null };
         for (const file of files) {
             const known = this.files.get(file);
@@ -254,16 +231,6 @@ export class Totals {
         }
         return sum;
     }
-    async sizes(files) {
-        const out = new Map();
-        const r = await exec("wc", ["-c", "--", ...files]).catch(() => null);
-        for (const line of (r?.stdout ?? "").split("\n")) {
-            const m = /^\s*(\d+)\s+(.+)$/.exec(line);
-            if (m && files.includes(m[2]))
-                out.set(m[2], Number(m[1]));
-        }
-        return out;
-    }
     async read(file) {
         let s = this.files.get(file);
         if (!s) {
@@ -271,27 +238,21 @@ export class Totals {
             this.files.set(file, s);
         }
         for (let i = 0; i < 8; i++) {
-            const r = await exec("/bin/sh", ["-c", READ, "sh", file, String(s.offset + 1), String(CHUNK)]).catch(() => null);
-            if (!r || r.code !== 0)
+            const chunk = await system.readChunk(file, s.offset, CHUNK);
+            if (!chunk)
                 break;
-            const cut = r.stdout.indexOf("\n");
-            if (cut < 1 || !/^\d+$/.test(r.stdout.slice(0, cut)))
-                break;
-            const size = Number(r.stdout.slice(0, cut));
-            const body = r.stdout.slice(cut + 1);
-            if (!Number.isFinite(size))
-                break;
+            const { size, body } = chunk;
             if (size < s.offset) {
                 Object.assign(s, fresh());
                 continue;
             }
             if (!body)
                 break;
-            const end = body.lastIndexOf("\n");
+            const end = body.lastIndexOf('\n');
             if (end < 0) {
                 if (size - s.offset <= CHUNK)
                     break;
-                const n = await this.lineLength(file, s.offset);
+                const n = await system.lineLength(file, s.offset);
                 if (!n)
                     break;
                 s.offset += n;
@@ -299,24 +260,19 @@ export class Totals {
             }
             const text = body.slice(0, end + 1);
             s.offset += utf8Len(text);
-            for (const line of text.split("\n"))
+            for (const line of text.split('\n'))
                 this.take(s, line);
             if (s.offset >= size)
                 break;
         }
         return s;
     }
-    async lineLength(file, offset) {
-        const r = await exec("/bin/sh", ["-c", LINE_END, "sh", file, String(offset + 1)]).catch(() => null);
-        const n = r?.code === 0 ? Number(r.stdout.trim()) : 0;
-        return Number.isInteger(n) && n > 0 ? n : 0;
-    }
     take(s, line) {
         if (!line.includes('"usage"'))
             return;
         const r = parse(line);
         const m = r?.message;
-        if (!m?.usage || m.model === "<synthetic>")
+        if (!m?.usage || m.model === '<synthetic>')
             return;
         const key = m.id ?? r.requestId ?? r.uuid;
         if (key) {
@@ -333,8 +289,8 @@ export class Totals {
     }
 }
 export function modelName(id, fallback) {
-    const m = /claude-([a-z]+)-(\d+)(?:-(\d+))?/.exec(id ?? "");
+    const m = /claude-([a-z]+)-(\d+)(?:-(\d+))?/.exec(id ?? '');
     if (m)
         return m[3] ? `${m[1]} ${m[2]}.${m[3]}` : `${m[1]} ${m[2]}`;
-    return (fallback ?? id ?? "").toLowerCase();
+    return (fallback ?? id ?? '').toLowerCase();
 }
