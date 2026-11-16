@@ -1,6 +1,6 @@
 # token-usage
 
-See Claude Code and Codex usage at a glance in [Herdr](https://herdr.dev). Remaining allowance and reset times, side by side.
+Claude Code and Codex usage at a glance in [Herdr](https://herdr.dev): remaining allowance and reset times, side by side.
 
 ![Claude Code and Codex usage in Herdr](preview.png)
 
@@ -15,10 +15,27 @@ python3 install.py
 herdr-app do layout.switch --name token-usage
 ```
 
-Open **Usage settings → Claude account → Connect** for Claude Code. Codex needs no connection setup. Limits refresh after replies.
+For Claude Code, click the panel to open **Usage settings → Claude account → Connect**. Codex needs no setup. Limits refresh after each reply.
 
-To update, run `git pull` and `python3 install.py --replace` from the same folder. Existing files are backed up.
+To update, run `git pull` and then `python3 install.py --replace` in the same folder. The installer backs up the files it replaces.
 
-[Use your own layout](RECIPE.md) · [Development](DEVELOPMENT.md)
+To add only the panel to your own layout, see the [token-usage mod](../token-usage-mod/RECIPE.md). The [recipe](RECIPE.md) describes the layout in full.
+
+## Change the code
+
+Edit the TypeScript in `mods/token-usage/src/`, then run from `mods/token-usage/` in this folder:
+
+```sh
+npm ci
+npm run verify
+```
+
+`verify` type-checks, rebuilds the JS, runs the Node and Python tests, and runs `herdr-app check`. Then copy the mod into the standalone mod package from the repository root:
+
+```sh
+rsync -a --delete --exclude node_modules --exclude __pycache__ --exclude gpui-kit.d.ts token-usage/mods/token-usage/ token-usage-mod/mods/token-usage/
+```
+
+`python3 -m unittest discover -s tests` in this folder fails while the two copies differ.
 
 A personal fork of PostHog's [Claude usage](https://github.com/PostHog/herdr/blob/main/claude-usage/RECIPE.md), shared under its [MIT license](LICENSE).

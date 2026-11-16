@@ -1,48 +1,48 @@
-# token-usage
+# Token usage
 
-Claude Code and Codex usage in a compact Herdr sidebar, with one settings window.
+The token-usage layout: Herdr's main window with a compact sidebar panel that shows Claude Code and Codex remaining allowance and reset times, plus one settings window for usage and both accounts.
 
-A personal fork of PostHog's [Claude usage recipe](https://github.com/PostHog/herdr/blob/main/claude-usage/RECIPE.md), shared under its [MIT license](LICENSE).
+![Token usage layout in Herdr](preview.png)
 
-## What you see
+## Window
 
-A borderless `Week left` header, one aligned bar of remaining allowance and percentage per provider, with the reset time on the same row. The header shows a period only when all reported windows match. Mixed periods are labeled on their own rows. The 92 px sidebar block scrolls for extra limits. A narrow sidebar shows names and remaining percentages.
+The layout follows Herdr's main layout: spaces and agents on the left, terminals in the center, Files and Changes on the right. The token-usage panel sits above the sidebar footer in a 92 px tall block. Colors follow the active theme.
 
-The optional layout follows Herdr's main layout: spaces and agents on the left, terminals in the center, Files and Changes on the right. The panel sits above the sidebar footer. Colors follow the active theme.
+## Panel
 
-## How it behaves
+A borderless `Week left` header sits over one row per provider: a bar of remaining allowance, the remaining percentage, and the reset time. The header shows a period only when all reported windows match; mixed periods are labeled on their own rows. Extra limits scroll inside the block. A narrow sidebar shows only names and remaining percentages.
 
-Click the panel or its settings icon to open Usage settings: Usage, Claude account, and Codex account. Both account pages expose only fields returned by the provider. Login opens its own CLI in a local tab; logout requires confirmation. Claude account also has Connect and Disconnect for its statusline wrapper.
+Bars show remaining allowance, and warning and urgent colors mark approaching exhaustion. `Resets` uses local 24-hour times. Expired windows show `--`. A failed refresh keeps the last good value and shows an error; stale reports are marked.
 
-Claude limits come from the statusline payload after a reply. Connect wraps the existing command and preserves its input and output. Codex limits come from local session-log events, checked every 15 seconds. The mod does not read credential files or call account usage endpoints directly. Reports are local snapshots; account changes can leave old limits until a new reply.
+## Settings and accounts
 
-Bars show remaining allowance; warning and urgent colors still indicate approaching exhaustion. The `Resets` column uses local 24-hour times. Expired windows show `--`. Refresh errors retain the last good value and show an error; stale reports are marked. Settings retains Claude's token totals and alert controls.
+Click the panel or its settings icon to open Usage settings, with three pages: Usage, Claude account, and Codex account. Usage also holds Claude's token totals and alert controls. Account pages show only fields the provider returns. Login opens the provider's own CLI in a local tab; logout asks for confirmation. Claude account also has Connect and Disconnect for its statusline wrapper.
 
-## Built from
+## Data sources
 
-- `layouts/token-usage.json` and its SVG preview; shipped Herdr mods for spaces, tabs, panes, Files and Changes.
-- `mods/token-usage/src/types.ts`: common `UsageProvider`, `UsageReport`, and discriminated `AccountState` contracts.
-- Provider adapters validate external results; `Resource` shares in-flight reads and preserves the last good value.
-- `src/main.ts`: native GPUI view and commands. Generated `.js` files run directly in Herdr.
-- Claude statusline/transcript adapter, `tap.sh`, and Python readers for Codex status and session reports.
+Claude limits come from the statusline payload after each reply. Connect wraps the existing statusline command and preserves its input and output. Codex limits come from local session-log events, checked every 15 seconds. The mod does not read credential files or call account usage endpoints. Reports are local snapshots, so after an account change the old limits can remain until the next reply.
 
-Runtime requirements: macOS or Linux, Python 3, Herdr, and whichever provider CLIs you use. The mod runs local commands and reads Claude settings/transcripts and Codex session logs outside its own folder. Claude Connect writes its CLI settings only after confirmation. Codex's sanitized cache lives under Herdr's `data/token-usage/`. The shipped JS needs no dependency installation.
+## Files
 
-## Reuse just the mod
+| Path | Role |
+|---|---|
+| `layouts/token-usage.json`, `layouts/token-usage.svg` | The layout and its picker preview. Apart from token-usage, it uses only mods that ship with Herdr. |
+| `mods/token-usage/src/` | TypeScript sources. Herdr runs the generated `.js` files next to them; edit only the sources. |
+| `mods/token-usage/src/types.ts` | `UsageProvider`, `UsageReport`, and the `AccountState` union shared by both providers. |
+| `mods/token-usage/src/main.ts` | The native GPUI view and its commands. |
+| `mods/token-usage/tap.sh`, `read_*.py` | Claude statusline tap, and Python readers for Claude reports and Codex status and session logs. |
 
-Copy `mods/token-usage/` into your Herdr config. Add this block to a personal layout; clone a shipped layout before editing it:
+Requirements: macOS or Linux, Python 3, Herdr, and the CLI of each provider you use. The mod runs local commands and reads Claude settings and transcripts and Codex session logs outside its own folder. Claude Connect changes Claude's CLI settings only after confirmation. A sanitized Codex cache lives under Herdr's `data/token-usage/`. The shipped JS needs no dependency install.
 
-```json
-{"id":"token-usage","type":"block","size":{"px":92},"content":{"mod":"token-usage"}}
-```
+To add only the panel to another layout, use the [token-usage mod](../token-usage-mod/RECIPE.md).
 
 ## Done when
 
 - `herdr-app check ~/.config/herdr-app/mods/token-usage` passes.
-- Provider rows show real locally reported limits and reset times.
+- Provider rows show real, locally reported limits and reset times.
 - Mixed periods are labeled separately; expired windows show `--`.
-- Both account tabs show actual sign-in state.
+- Both account pages show the actual sign-in state.
 - Claude Connect preserves the existing statusline; Disconnect removes only its wrapper.
-- `npm run verify` passes from `mods/token-usage/`.
+- `npm run verify` passes in `mods/token-usage/`.
 
-See [Development](DEVELOPMENT.md) for changing the code.
+A personal fork of PostHog's [Claude usage recipe](https://github.com/PostHog/herdr/blob/main/claude-usage/RECIPE.md), shared under its [MIT license](LICENSE).

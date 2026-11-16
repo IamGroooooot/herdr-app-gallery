@@ -4,3 +4,5 @@ __pycache__/
 gpui-kit.d.ts
 !token-usage/mods/token-usage/icons/
 !token-usage/mods/token-usage/icons/*.svg
+!token-usage-mod/mods/token-usage/icons/
+!token-usage-mod/mods/token-usage/icons/*.svg

@@ -23,6 +23,15 @@ class Install(unittest.TestCase):
             backup = installer.install(PROJECT, target, replace=True)
             self.assertEqual((backup / 'token-usage/personal.txt').read_text(), 'keep')
             self.assertEqual((target / 'settings.json').read_text(), '{"zoom":1.2}')
+    def test_standalone_mod_package_mirrors_mod(self):
+        ignored = {'node_modules', '__pycache__', 'gpui-kit.d.ts', '.DS_Store'}
+        def files(root):
+            return {p.relative_to(root): p.read_bytes() for p in root.rglob('*')
+                    if p.is_file() and not ignored & set(p.relative_to(root).parts) and p.suffix != '.pyc'}
+        package = PROJECT.parent / 'token-usage-mod'
+        self.assertFalse((package / 'layouts').exists(), 'a mod package must not contain layouts/')
+        self.assertEqual(files(package / 'mods/token-usage'), files(PROJECT / 'mods/token-usage'),
+                         'token-usage-mod is out of date; run the rsync command in README.md')
     def test_check_failure_restores_old_files(self):
         with tempfile.TemporaryDirectory() as d:
             target = Path(d)
