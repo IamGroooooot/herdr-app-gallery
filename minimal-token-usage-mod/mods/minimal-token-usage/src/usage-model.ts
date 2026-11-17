@@ -31,7 +31,7 @@ export function usageProviders(inputs: readonly ProviderDisplayInput[], now = Da
       message = error ? "Couldn't refresh" : 'Checking…';
     } else if (connection && !connection.value?.connected) {
       status = 'unlinked';
-      message = 'Connect in settings';
+      message = 'Signed in · connect for limits';
     } else if (!usage.value?.windows.length) {
       status = 'waiting';
       message = 'Awaiting reply';

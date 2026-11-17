@@ -28,7 +28,7 @@ export function usageProviders(inputs, now = Date.now()) {
         }
         else if (connection && !connection.value?.connected) {
             status = 'unlinked';
-            message = 'Connect in settings';
+            message = 'Signed in · connect for limits';
         }
         else if (!usage.value?.windows.length) {
             status = 'waiting';

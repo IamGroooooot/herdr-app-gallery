@@ -170,6 +170,8 @@ test('each provider row says why it has no limits to show', () => {
     assert.equal(Boolean(shown.message), status !== 'ready', status);
   }
   assert.equal(row({ account: missing }).detail, 'Claude Code is not installed.');
+  // Not connected is not "not signed in": the row says the sign-in was seen.
+  assert.match(row({ connection: read({ connected: false }) }).message, /^Signed in/);
 });
 
 test('a failed refresh keeps the last limits and flags them; an hour-old report is marked stale', () => {
