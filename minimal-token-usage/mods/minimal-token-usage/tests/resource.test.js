@@ -113,3 +113,35 @@ test('failed attempts also respect TTL, avoiding a process-spawn storm', async (
   await resource.refresh(10000);
   assert.equal(calls, 2);
 });
+
+test('a read the host never answers times out, shows an error, and is asked again', async () => {
+  let now = 0;
+  let calls = 0;
+  const resolvers = [];
+  const resource = new Resource(
+    () => {
+      calls++;
+      return new Promise(done => resolvers.push(done));
+    },
+    () => now,
+    undefined,
+    30000,
+  );
+  const first = resource.refresh(300000);
+  now = 29999;
+  assert.equal(resource.refresh(300000), first);
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  now = 30000;
+  const second = resource.refresh(300000);
+  await Promise.resolve();
+  assert.equal(calls, 2);
+  assert.equal(resource.error, 'Timed out.');
+  assert.equal(resource.loading, true);
+  resolvers[0]('late');
+  resolvers[1]('fresh');
+  await second;
+  assert.equal(resource.value, 'fresh');
+  assert.equal(resource.error, null);
+  assert.equal(resource.loading, false);
+});

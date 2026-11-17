@@ -17,10 +17,16 @@ export class Resource<T> {
     private readonly read: () => Promise<T>,
     private readonly clock = Date.now,
     private readonly changed: () => void = () => {},
+    private readonly deadline = 30000,
   ) {}
 
+  /** A read the host never answers must not hold the resource in "loading" forever: past `deadline` it fails and the next refresh asks again. */
   refresh(maxAge = 0): Promise<void> {
-    if (this.pending) return this.pending;
+    if (this.pending) {
+      if (this.clock() - (this.attemptedAt ?? 0) < this.deadline) return this.pending;
+      this.abandon('Timed out.');
+      this.attemptedAt = null;
+    }
     if (this.attemptedAt !== null && this.clock() - this.attemptedAt < maxAge) return Promise.resolve();
     this.attemptedAt = this.clock();
     this.loading = true;
@@ -40,6 +46,7 @@ export class Resource<T> {
         },
       )
       .finally(() => {
+        if (generation !== this.generation) return;
         this.loading = false;
         this.pending = null;
         this.changed();
@@ -48,10 +55,16 @@ export class Resource<T> {
     return this.pending;
   }
 
-  invalidate(): void {
+  private abandon(error: string | null): void {
     this.generation++;
+    this.pending = null;
+    this.loading = false;
+    this.error = error;
+  }
+
+  invalidate(): void {
+    this.abandon(null);
     this.value = null;
-    this.error = null;
     this.checkedAt = null;
     this.attemptedAt = null;
     this.changed();
