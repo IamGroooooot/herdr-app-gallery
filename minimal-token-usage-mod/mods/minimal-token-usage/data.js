@@ -41,7 +41,7 @@ export async function ensureDataDir() {
 }
 export async function auth() {
     try {
-        const r = await exec('claude', ['auth', 'status', '--json']);
+        const r = await system.cli('claude', ['auth', 'status', '--json']);
         const s = parse(r.stdout.trim());
         if (s && typeof s === 'object') {
             if (!s.configDirectory)

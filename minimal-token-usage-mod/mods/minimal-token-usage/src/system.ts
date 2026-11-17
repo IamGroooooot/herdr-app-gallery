@@ -33,6 +33,8 @@ export interface System {
   codexTails(known: ReadonlyMap<string, number>): Promise<LogTails | null>;
   claudeConfigDir(): Promise<string | null>;
   restrict(dir: string): Promise<void>;
+  /** Runs a provider's CLI: the one Herdr finds, or else the one in the newest Node version under nvm. Rejects when there is none. */
+  cli(name: string, args: string[], options?: { timeout?: number }): Promise<ExecResult>;
 }
 
 const TIMEOUT = { timeout: 10000 };
@@ -88,8 +90,22 @@ const CODEX_TAILS = [
   'exit 0',
 ].join('\n');
 
+// Herdr runs commands with the login shell's PATH. nvm adds its folder in the interactive shell
+// only, so a CLI installed with npm under nvm is on disk but not on that PATH. No shell profile is run to find it.
+const NODE_BINS = [
+  'for root in "${NVM_DIR:-$HOME/.nvm}" "${XDG_CONFIG_HOME:-$HOME/.config}/nvm"; do',
+  '  for f in "$root"/versions/node/*/bin/"$1"; do',
+  `    if [ -x "$f" ]; then printf '%s\\n' "\${f%/*}"; fi`,
+  '  done',
+  'done',
+  'exit 0',
+].join('\n');
+
+// Such a CLI is a Node script (`#!/usr/bin/env node`): its folder goes first on PATH so it runs with its own node.
+const RUN_IN = 'PATH="$1:$PATH"; export PATH; program="$1/$2"; shift 2; exec "$program" "$@"';
+
 /** The POSIX scripts, for scripts/lint.mjs to hand to shellcheck. */
-export const POSIX_SCRIPTS = { READ, LINE_END, CODEX_TAILS };
+export const POSIX_SCRIPTS = { READ, LINE_END, CODEX_TAILS, NODE_BINS, RUN_IN };
 
 // No double quotes in the PowerShell text: they would need escaping on a Windows command line.
 // Output is written as UTF-8 bytes because Windows PowerShell encodes strings with the console code page.
@@ -166,6 +182,22 @@ function parseTails(stdout: string): LogTails {
   return { tails, failures };
 }
 
+/** Whether an exec rejection says the program is not there, rather than that it was slow or refused. */
+export function notInstalled(reason: unknown): boolean {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  return /no such file|not found|cannot find|ENOENT/i.test(message);
+}
+
+/** Version order, not text order: v10 is newer than v9. */
+function newestNodeBin(dirs: readonly string[]): string | null {
+  const versioned = dirs.flatMap(dir => {
+    const m = /\/v(\d+)\.(\d+)\.(\d+)\/bin$/.exec(dir);
+    return m ? [{ dir, v: m.slice(1).map(Number) }] : [];
+  });
+  versioned.sort((a, b) => b.v[0] - a.v[0] || b.v[1] - a.v[1] || b.v[2] - a.v[2]);
+  return versioned[0]?.dir ?? null;
+}
+
 const knownText = (known: ReadonlyMap<string, number>) =>
   `|${[...known].map(([path, size]) => `${size} ${path}`).join('|')}|`;
 const isWindows = (platform: string) => /^win/i.test(platform);
@@ -211,6 +243,18 @@ export function createSystem(exec: Exec, platform: string): System {
     },
     async restrict(dir) {
       if (!windows) await exec('chmod', ['700', dir], TIMEOUT).catch((): null => null);
+    },
+    async cli(name, args, options) {
+      try {
+        return await exec(name, args, options);
+      } catch (reason) {
+        // A CLI Herdr did find but that was slow or refused is not looked for elsewhere.
+        if (!notInstalled(reason)) throw reason;
+        const found = windows ? null : await sh(NODE_BINS, [name]).catch((): null => null);
+        const dir = newestNodeBin((found?.stdout ?? '').split('\n'));
+        if (!dir) throw reason;
+        return exec('/bin/sh', ['-c', RUN_IN, 'sh', dir, name, ...args], options);
+      }
     },
   };
 }

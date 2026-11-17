@@ -1,4 +1,4 @@
-import { exec, notify, playSound, setShared, shared } from 'herdr';
+import { notify, playSound, setShared, shared } from 'herdr';
 import { CodexLogs, codexAccountFailure, codexAccountStatus } from './codex.js';
 import { auth, clearReports, configDir, connection, limits, projectsDir, system } from './data.js';
 import { createProviders } from './providers.js';
@@ -9,9 +9,9 @@ import { PREFS_KEY, readPrefs, resetLabel } from './usage-model.js';
 let instance: UsageStore | null = null;
 let revision = 0;
 async function codexAccount(): Promise<AccountState> {
-  let result: Awaited<ReturnType<typeof exec>>;
+  let result: Awaited<ReturnType<typeof system.cli>>;
   try {
-    result = await exec('codex', ['login', 'status'], { timeout: 8000 });
+    result = await system.cli('codex', ['login', 'status'], { timeout: 8000 });
   } catch (reason) {
     return codexAccountFailure(reason);
   }

@@ -41,7 +41,7 @@ Claude limits come from the statusline payload after each reply. Connect wraps t
 | `mods/minimal-token-usage/src/system.ts` | The only system commands, for what Herdr's runtime cannot do (file sizes, byte ranges, newest logs): POSIX sh, or PowerShell on Windows. |
 | `mods/minimal-token-usage/tap.sh` | Saves each Claude statusline payload with its time, then passes it on. |
 
-Claude Code and Codex are the only providers. Requirements: Herdr and the CLI of each provider you use, on macOS or Linux. No Python, Node or other runtime; the Windows path through PowerShell is not yet tested on Windows. The mod runs local commands and reads Claude settings and transcripts and Codex session logs outside its own folder. Claude Connect changes Claude's CLI settings only after confirmation. Saved Claude reports live under Herdr's `data/minimal-token-usage/`. The shipped JS needs no dependency install.
+Claude Code and Codex are the only providers. Requirements: Herdr and the CLI of each provider you use, on macOS or Linux. A CLI installed with npm under nvm is found there even though it is not on the PATH Herdr runs commands with. No Python, Node or other runtime; the Windows path through PowerShell is not yet tested on Windows. The mod runs local commands and reads Claude settings and transcripts and Codex session logs outside its own folder. Claude Connect changes Claude's CLI settings only after confirmation. Saved Claude reports live under Herdr's `data/minimal-token-usage/`. The shipped JS needs no dependency install.
 
 The complete window with this panel is the [Minimal Token Usage layout](../minimal-token-usage/RECIPE.md).
 

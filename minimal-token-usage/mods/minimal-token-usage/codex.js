@@ -1,6 +1,7 @@
 // Generated from src/codex.ts. Edit the TS source, then run npm run verify.
 /** Never credentials or conversation content. */
 import { finite, object, parseJson } from './json.js';
+import { notInstalled } from './system.js';
 export function usageEvent(line) {
     if (!line.includes('"token_count"'))
         return null;
@@ -88,8 +89,7 @@ export function codexAccountStatus(code, output) {
     throw new Error(UNDETERMINED);
 }
 export function codexAccountFailure(reason) {
-    const message = reason instanceof Error ? reason.message : String(reason);
-    if (/no such file|not found|cannot find/i.test(message))
+    if (notInstalled(reason))
         return { kind: 'unavailable', reason: "Codex is not installed or is not on Herdr's PATH." };
     throw new Error(UNDETERMINED);
 }

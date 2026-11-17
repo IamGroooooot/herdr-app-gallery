@@ -1,6 +1,6 @@
 /** Never credentials or conversation content. */
 import { finite, object, parseJson } from './json.js';
-import type { LogTails } from './system.js';
+import { type LogTails, notInstalled } from './system.js';
 import type { AccountState } from './types.js';
 
 export interface CodexWindow {
@@ -98,8 +98,6 @@ export function codexAccountStatus(code: number, output: string): AccountState {
 }
 
 export function codexAccountFailure(reason: unknown): AccountState {
-  const message = reason instanceof Error ? reason.message : String(reason);
-  if (/no such file|not found|cannot find/i.test(message))
-    return { kind: 'unavailable', reason: "Codex is not installed or is not on Herdr's PATH." };
+  if (notInstalled(reason)) return { kind: 'unavailable', reason: "Codex is not installed or is not on Herdr's PATH." };
   throw new Error(UNDETERMINED);
 }

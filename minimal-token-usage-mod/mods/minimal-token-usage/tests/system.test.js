@@ -132,4 +132,60 @@ for (const [shell, platform, remap] of shells) {
     assert.equal(await codex('', { CLAUDE_CONFIG_DIR: '/tmp/a b' }).system.claudeConfigDir(), '/tmp/a b');
     assert.equal(await codex('', { CLAUDE_CONFIG_DIR: null }).system.claudeConfigDir(), null);
   });
+
+  const CLI = 'token-usage-test-cli';
+  // What npm installs under nvm: a Node script beside the node that runs it.
+  const nvmCli = (root, version, mode = 0o755) => {
+    const bin = join(root, 'versions', 'node', version, 'bin');
+    mkdirSync(bin, { recursive: true });
+    const node = `#!/bin/sh\nscript="$1"\nshift\nprintf '%s ran %s with %s\\n' ${version} "\${script##*/}" "$*"\n`;
+    writeFileSync(join(bin, 'node'), node, { mode: 0o755 });
+    writeFileSync(join(bin, CLI), '#!/usr/bin/env node\n', { mode });
+  };
+  const ran = version => ({ code: 0, stdout: `${version} ran ${CLI} with login status\n`, stderr: '' });
+  const cli = env => codex('', { NVM_DIR: null, XDG_CONFIG_HOME: null, ...env }).system.cli(CLI, ['login', 'status']);
+
+  test(`${shell}: a CLI that is not on Herdr's PATH runs from the newest Node version under nvm that has it`, async t => {
+    const home = temp(t),
+      nvm = join(home, '.nvm');
+    nvmCli(nvm, 'v9.9.0');
+    nvmCli(nvm, 'v10.0.0');
+    nvmCli(nvm, 'v30.0.0', 0o644);
+    mkdirSync(join(nvm, 'versions', 'node', 'v40.0.0', 'bin'), { recursive: true });
+    if (platform === 'windows') return assert.rejects(cli({ HOME: home }));
+    assert.deepEqual(await cli({ HOME: home }), ran('v10.0.0'));
+
+    const onPath = join(home, 'on path');
+    mkdirSync(onPath);
+    writeFileSync(join(onPath, CLI), '#!/bin/sh\necho found by Herdr\n', { mode: 0o755 });
+    const found = await cli({ HOME: home, PATH: `${onPath}:${process.env.PATH}` });
+    assert.equal(found.stdout, 'found by Herdr\n');
+  });
+
+  test(`${shell}: nvm's folder can be NVM_DIR, or nvm under XDG_CONFIG_HOME`, async t => {
+    const home = temp(t);
+    nvmCli(join(home, 'my nvm'), 'v20.1.0');
+    nvmCli(join(home, 'xdg', 'nvm'), 'v21.0.0');
+    if (platform === 'windows') return;
+    assert.deepEqual(await cli({ HOME: home, NVM_DIR: join(home, 'my nvm') }), ran('v20.1.0'));
+    assert.deepEqual(await cli({ HOME: home, XDG_CONFIG_HOME: join(home, 'xdg') }), ran('v21.0.0'));
+  });
+
+  test(`${shell}: a CLI that is nowhere fails the way Herdr reports it`, async t => {
+    await assert.rejects(cli({ HOME: temp(t) }), /ENOENT/);
+  });
+
+  test(`${shell}: a CLI Herdr found but had to stop is not run again from nvm`, async t => {
+    const home = temp(t);
+    nvmCli(join(home, '.nvm'), 'v20.1.0');
+    const calls = [];
+    const slow = (command, args, options) => {
+      calls.push(command);
+      if (command === CLI)
+        return Promise.reject(new Error(`\`herdr.exec\`: ${CLI} took longer than 8 s and was stopped`));
+      return execWith({ HOME: home, NVM_DIR: null, XDG_CONFIG_HOME: null }, remap)(command, args, options);
+    };
+    await assert.rejects(createSystem(slow, platform).cli(CLI, ['login', 'status']), /took longer/);
+    assert.deepEqual(calls, [CLI]);
+  });
 }
