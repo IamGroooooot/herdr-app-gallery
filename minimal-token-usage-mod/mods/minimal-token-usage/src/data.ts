@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import { appHome, exec, hc, home, readTextFile, writeTextFile } from 'herdr';
-import { finite, object, parseJson } from './json.js';
+import { finite, object, parseJson, text } from './json.js';
 import { decodeReports } from './reports.js';
 import { createSystem, type EnvVar } from './system.js';
 import type { ClaudeAuth, ClaudeLimits, ClaudeSettings, ConnectionResult, Tokens } from './types.js';
@@ -13,7 +13,6 @@ const CHUNK = 4 * 1024 * 1024;
 
 /** The JSON object in `text`; null for anything else. */
 const parseObject = (text: string | null) => (text ? object(parseJson(text)) : null);
-const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined);
 const count = (value: unknown) => (finite(value) ? value : 0);
 
 const shq = (s: string) => `'${String(s).replace(/'/g, `'\\''`)}'`;

@@ -36,7 +36,6 @@ function providers(overrides = {}) {
     claudeUsage: async () => ({
       windows: { seven_day: { ...window, used: 59 } },
       sessions: new Map(),
-      reports: 1,
       reportedAt: now,
     }),
     claudeAccount: async () => claudeAuth,

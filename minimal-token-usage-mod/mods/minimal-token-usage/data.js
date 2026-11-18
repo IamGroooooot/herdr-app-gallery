@@ -1,7 +1,7 @@
 // Generated from src/data.ts. Edit the TS source, then run npm run verify.
 import * as fs from 'fs/promises';
 import { appHome, exec, hc, home, readTextFile, writeTextFile } from 'herdr';
-import { finite, object, parseJson } from './json.js';
+import { finite, object, parseJson, text } from './json.js';
 import { decodeReports } from './reports.js';
 import { createSystem } from './system.js';
 export const system = createSystem(exec, process.platform);
@@ -10,7 +10,6 @@ export const tapPath = () => `${appHome()}/mods/minimal-token-usage/tap.sh`;
 const CHUNK = 4 * 1024 * 1024;
 /** The JSON object in `text`; null for anything else. */
 const parseObject = (text) => (text ? object(parseJson(text)) : null);
-const text = (value) => (typeof value === 'string' && value ? value : undefined);
 const count = (value) => (finite(value) ? value : 0);
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 export function utf8Len(s) {

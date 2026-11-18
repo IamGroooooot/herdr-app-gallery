@@ -69,7 +69,6 @@ export interface ClaudeAuth {
 export interface ClaudeLimits {
   windows: Record<string, Limit>;
   sessions: Map<string, SessionRef>;
-  reports: number;
   reportedAt: number | null;
   /** `CLAUDE_CONFIG_DIR` of the session that reported last. Null when it had none or no report says:
    *  the account is then the one Herdr's own environment names. */

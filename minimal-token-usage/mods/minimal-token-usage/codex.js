@@ -1,6 +1,6 @@
 // Generated from src/codex.ts. Edit the TS source, then run npm run verify.
 /** Never credentials or conversation content. */
-import { finite, object, parseJson } from './json.js';
+import { finite, object, parseJson, text } from './json.js';
 import { notInstalled } from './system.js';
 const eventOf = (line, type) => {
     if (!line.includes(`"${type}"`))
@@ -10,6 +10,7 @@ const eventOf = (line, type) => {
     const named = event?.type === type || (event?.type === 'event_msg' && payload?.type === type);
     return event && payload && named ? { event, payload } : null;
 };
+const seconds = (timestamp) => (typeof timestamp === 'string' ? Date.parse(timestamp) / 1000 : NaN);
 /** A session's running totals are in its last usage event; its folder and model in its last turn context.
  *  `lines` are in log order. Codex counts cached input inside input, so the two are told apart here. */
 export function sessionTotals(lines) {
@@ -21,7 +22,7 @@ export function sessionTotals(lines) {
             continue;
         const usage = eventOf(lines[i], 'token_count');
         const total = object(object(usage?.payload.info)?.total_token_usage);
-        const at = typeof usage?.event.timestamp === 'string' ? Date.parse(usage.event.timestamp) : NaN;
+        const at = seconds(usage?.event.timestamp) * 1000;
         if (!total || !finite(at))
             continue;
         const tokens = (key) => (finite(total[key]) && total[key] > 0 ? total[key] : 0);
@@ -32,19 +33,14 @@ export function sessionTotals(lines) {
         return null;
     return {
         ...totals,
-        folder: typeof context?.cwd === 'string' && context.cwd ? context.cwd : null,
-        model: typeof context?.model === 'string' && context.model ? context.model : null,
+        folder: text(context?.cwd) ?? null,
+        model: text(context?.model) ?? null,
     };
 }
 export function usageEvent(line) {
-    if (!line.includes('"token_count"'))
-        return null;
-    const event = object(parseJson(line));
-    const payload = object(event?.payload);
-    if (event?.type !== 'event_msg' || payload?.type !== 'token_count')
-        return null;
-    const limits = object(payload.rate_limits);
-    const at = typeof event.timestamp === 'string' ? Date.parse(event.timestamp) / 1000 : NaN;
+    const usage = eventOf(line, 'token_count');
+    const limits = object(usage?.payload.rate_limits);
+    const at = seconds(usage?.event.timestamp);
     if (!limits || !finite(at))
         return null;
     const windows = [];
@@ -64,7 +60,7 @@ export function usageEvent(line) {
     return {
         at,
         windows,
-        limit_id: typeof limits.limit_id === 'string' && limits.limit_id ? limits.limit_id : 'codex',
+        limit_id: text(limits.limit_id) ?? 'codex',
         name: typeof limits.limit_name === 'string' ? limits.limit_name : null,
     };
 }

@@ -32,8 +32,8 @@ export function decodeReports(files: readonly ReportFile[], now: number, project
   let sessionConfigDir: string | null = null,
     sessionAt = 0;
   let failures = 0;
-  for (const { name, text } of files) {
-    const document = text == null ? undefined : parseJson(text);
+  for (const { name, text: saved } of files) {
+    const document = saved == null ? undefined : parseJson(saved);
     if (document == null) {
       failures++;
       expired.push(name);

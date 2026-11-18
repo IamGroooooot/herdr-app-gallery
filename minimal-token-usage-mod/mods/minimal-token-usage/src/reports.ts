@@ -1,5 +1,5 @@
 /** Claude statusline reports saved by tap.sh: `{"reported_at": seconds, "config_dir": the session's CLAUDE_CONFIG_DIR, "report": payload}`. */
-import { finite, object, parseJson } from './json.js';
+import { finite, object, parseJson, text } from './json.js';
 import type { ClaudeLimits, Limit, SessionRef } from './types.js';
 
 export const CLAUDE_WINDOWS: Record<string, string> = { five_hour: '5h', seven_day: 'Week', spend_limit: 'Spend' };
@@ -31,10 +31,9 @@ export function decodeReports(files: readonly ReportFile[], now: number, project
   const expired: string[] = [];
   let sessionConfigDir: string | null = null,
     sessionAt = 0;
-  let reports = 0,
-    failures = 0;
-  for (const { name, text } of files) {
-    const document = text == null ? undefined : parseJson(text);
+  let failures = 0;
+  for (const { name, text: saved } of files) {
+    const document = saved == null ? undefined : parseJson(saved);
     if (document == null) {
       failures++;
       expired.push(name);
@@ -46,13 +45,11 @@ export function decodeReports(files: readonly ReportFile[], now: number, project
     const payload = object(wrapper.report) ?? wrapper;
     const reportedAt =
       payload !== wrapper && finite(wrapper.reported_at) && wrapper.reported_at > 0 ? wrapper.reported_at * 1000 : 0;
-    reports++;
     if (reportedAt >= sessionAt && typeof wrapper.config_dir === 'string') {
       sessionConfigDir = wrapper.config_dir || null;
       sessionAt = reportedAt;
     }
-    const sid =
-      typeof payload.session_id === 'string' && payload.session_id ? payload.session_id : name.replace(/\.json$/, '');
+    const sid = text(payload.session_id) ?? name.replace(/\.json$/, '');
     const model = object(payload.model)?.display_name;
     const transcript = typeof payload.transcript_path === 'string' ? payload.transcript_path : null;
     sessions.set(sid, { transcript, model: typeof model === 'string' ? model : null });
@@ -75,5 +72,5 @@ export function decodeReports(files: readonly ReportFile[], now: number, project
     if (reportedAt ? now - reportedAt > KEEP : !active && !foreign) expired.push(name);
   }
   const reportedAt = Math.max(0, ...Object.values(stamps).map(s => s[2])) || null;
-  return { limits: { windows, sessions, reports, reportedAt, sessionConfigDir }, failures, expired };
+  return { limits: { windows, sessions, reportedAt, sessionConfigDir }, failures, expired };
 }
