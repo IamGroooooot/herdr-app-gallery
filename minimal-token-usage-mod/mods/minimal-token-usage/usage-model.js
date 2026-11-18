@@ -32,7 +32,7 @@ export function usageProviders(inputs, now = Date.now()) {
         }
         else if (!usage.value?.windows.length) {
             status = 'waiting';
-            message = 'Awaiting reply';
+            message = 'Send a message to see usage';
         }
         const at = usage.value?.reportedAt ?? null;
         return {

@@ -34,7 +34,7 @@ export function usageProviders(inputs: readonly ProviderDisplayInput[], now = Da
       message = 'Signed in · connect for limits';
     } else if (!usage.value?.windows.length) {
       status = 'waiting';
-      message = 'Awaiting reply';
+      message = 'Send a message to see usage';
     }
     const at = usage.value?.reportedAt ?? null;
     return {
