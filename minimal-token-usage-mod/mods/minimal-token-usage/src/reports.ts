@@ -1,4 +1,4 @@
-/** Claude statusline reports saved by tap.sh: `{"reported_at": seconds, "report": payload}`. */
+/** Claude statusline reports saved by tap.sh: `{"reported_at": seconds, "config_dir": the session's CLAUDE_CONFIG_DIR, "report": payload}`. */
 import { finite, object, parseJson } from './json.js';
 import type { ClaudeLimits, Limit, SessionRef } from './types.js';
 
@@ -29,6 +29,8 @@ export function decodeReports(files: readonly ReportFile[], now: number, project
   const stamps: Record<string, [number, number, number]> = {};
   const sessions = new Map<string, SessionRef>();
   const expired: string[] = [];
+  let sessionConfigDir: string | null = null,
+    sessionAt = 0;
   let reports = 0,
     failures = 0;
   for (const { name, text } of files) {
@@ -45,6 +47,10 @@ export function decodeReports(files: readonly ReportFile[], now: number, project
     const reportedAt =
       payload !== wrapper && finite(wrapper.reported_at) && wrapper.reported_at > 0 ? wrapper.reported_at * 1000 : 0;
     reports++;
+    if (reportedAt >= sessionAt && typeof wrapper.config_dir === 'string') {
+      sessionConfigDir = wrapper.config_dir || null;
+      sessionAt = reportedAt;
+    }
     const sid =
       typeof payload.session_id === 'string' && payload.session_id ? payload.session_id : name.replace(/\.json$/, '');
     const model = object(payload.model)?.display_name;
@@ -69,5 +75,5 @@ export function decodeReports(files: readonly ReportFile[], now: number, project
     if (reportedAt ? now - reportedAt > KEEP : !active && !foreign) expired.push(name);
   }
   const reportedAt = Math.max(0, ...Object.values(stamps).map(s => s[2])) || null;
-  return { limits: { windows, sessions, reports, reportedAt }, failures, expired };
+  return { limits: { windows, sessions, reports, reportedAt, sessionConfigDir }, failures, expired };
 }

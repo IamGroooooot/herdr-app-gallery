@@ -93,7 +93,9 @@ test('tap.sh stamps each report, passes the statusline input through and survive
   cpSync(new URL('../tap.sh', import.meta.url), join(mod, 'tap.sh'));
   const payload = JSON.stringify({ session_id: 'abc-123', note: 'it\'s 100% \\n "quoted"', rate_limits: week(59) });
   const before = Date.now() / 1000 - 1;
-  const run = input => spawnSync('sh', [join(mod, 'tap.sh')], { input, encoding: 'utf8' });
+  const configDir = '/tmp/a "b" \\ c';
+  const run = (input, env = { CLAUDE_CONFIG_DIR: configDir }) =>
+    spawnSync('sh', [join(mod, 'tap.sh')], { input, encoding: 'utf8', env: { PATH: process.env.PATH, ...env } });
   assert.equal(run(payload).stdout, payload);
   assert.equal(run('not json').stdout, 'not json');
   const sessions = join(home, 'data/minimal-token-usage/sessions');
@@ -103,6 +105,10 @@ test('tap.sh stamps each report, passes the statusline input through and survive
   assert(saved.reported_at >= before && saved.reported_at <= Date.now() / 1000 + 1);
   const { limits } = decodeReports([{ name: 'abc-123.json', text: JSON.stringify(saved) }], Date.now());
   assert.equal(limits.reportedAt, saved.reported_at * 1000);
+  // The session's own config folder says which account replied; none means Claude's default.
+  assert.equal(limits.sessionConfigDir, configDir);
+  run(payload, {});
+  assert.equal(JSON.parse(readFileSync(join(sessions, 'abc-123.json'), 'utf8')).config_dir, '');
   // Reports name the account's projects and sessions: only the user may read them.
   if (process.platform !== 'win32') {
     for (const path of [
@@ -119,6 +125,24 @@ test('tap.sh stamps each report, passes the statusline input through and survive
   assert.equal(run(escaping).stdout, escaping);
   assert.deepEqual(readdirSync(sessions), ['abc-123.json']);
   assert.deepEqual(readdirSync(join(home, 'data/minimal-token-usage')), ['sessions']);
+});
+
+test('the config folder to follow is that of the session that reported last', () => {
+  const under = (at, config_dir) => JSON.stringify({ reported_at: at, config_dir, report: { rate_limits: week(1) } });
+  const sessionConfigDir = files => decodeReports(files, now).limits.sessionConfigDir;
+  assert.equal(
+    sessionConfigDir([file('old', report(3000, { rate_limits: week(1) }))]),
+    null,
+    'no report names a folder',
+  );
+  const files = [file('work', under(2000, '/accounts/work')), file('own', under(1000, ''))];
+  assert.equal(sessionConfigDir(files), '/accounts/work');
+  assert.equal(sessionConfigDir(files.reverse()), '/accounts/work');
+  assert.equal(
+    sessionConfigDir([...files, file('later', under(2500, ''))]),
+    null,
+    'a session with no CLAUDE_CONFIG_DIR',
+  );
 });
 
 test("sessions of another Claude account do not count as the signed-in account's limits", () => {

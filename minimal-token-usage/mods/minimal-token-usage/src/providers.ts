@@ -45,10 +45,16 @@ export function createProviders(source: ProviderSources): Record<'claude' | 'cod
       },
       async readAccount() {
         const a = await source.claudeAccount();
+        const sessionConfigDir = a.sessionConfigDir ?? null;
         if (a.missing)
-          return { kind: 'unavailable', reason: "Claude Code is not installed or is not on Herdr's PATH." };
+          return {
+            kind: 'unavailable',
+            reason: "Claude Code is not installed or is not on Herdr's PATH.",
+            context: { sessionConfigDir },
+          };
         if (a.error) throw new Error(a.error);
         const context = {
+          sessionConfigDir,
           configDirectory: a.configDirectory,
           projectsDirectory: a.projectsDirectory,
           identity: a.email ? `${a.email}|${a.orgId ?? ''}` : undefined,

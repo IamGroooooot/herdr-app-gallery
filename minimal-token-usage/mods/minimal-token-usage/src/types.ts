@@ -18,7 +18,14 @@ export interface UsageReport {
   sessions: ReadonlyMap<string, SessionRef>;
   reportedAt: number | null;
 }
-export type AccountState = { context?: { configDirectory?: string; projectsDirectory?: string; identity?: string } } & (
+export interface AccountContext {
+  configDirectory?: string;
+  projectsDirectory?: string;
+  identity?: string;
+  /** The `CLAUDE_CONFIG_DIR` this account was read under; see `ClaudeLimits.sessionConfigDir`. */
+  sessionConfigDir?: string | null;
+}
+export type AccountState = { context?: AccountContext } & (
   | { kind: 'signed-in'; method: string; email?: string; plan?: string; expiresAt?: string }
   | { kind: 'signed-out' }
   | { kind: 'unavailable'; reason: string }
@@ -46,12 +53,16 @@ export interface ClaudeAuth {
   authMethod?: string;
   subscriptionType?: string;
   loginExpiresAt?: string;
+  sessionConfigDir?: string | null;
 }
 export interface ClaudeLimits {
   windows: Record<string, Limit>;
   sessions: Map<string, SessionRef>;
   reports: number;
   reportedAt: number | null;
+  /** `CLAUDE_CONFIG_DIR` of the session that reported last. Null when it had none or no report says:
+   *  the account is then the one Herdr's own environment names. */
+  sessionConfigDir: string | null;
 }
 export interface ClaudeSettings {
   statusLine?: { type?: string; command?: string; [key: string]: unknown };

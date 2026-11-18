@@ -2,7 +2,7 @@
 import { h_flex, v_flex } from 'gpui-base';
 import { div, svg, View } from 'gpui-kit';
 import { agents, checking, closeOverlay, home, layout, nextCommand, notify, openOverlay, props, run, setShared, shared, spaces, theme, themes, } from 'herdr';
-import { configDir, connect, disconnect, ensureDataDir, findTranscript, modelName, projectsDir, prune, sessionOf, Totals, tapPath, } from './data.js';
+import { claudeEnv, configDir, connect, disconnect, ensureDataDir, findTranscript, modelName, projectsDir, prune, sessionOf, system, Totals, tapPath, } from './data.js';
 import { usageStore } from './runtime.js';
 import { commonPeriod, litSegments, ownColors, PREFS_KEY, periodWidth, readPrefs, remainingPercent, remainingValue, resetLabel, rowNote, STRIP, STRIP_STYLES, stripHeight, stripOverflows, usageProviders, usageValue, } from './usage-model.js';
 const ICON = (name) => `mods/minimal-token-usage/icons/${name}.svg`;
@@ -208,7 +208,7 @@ export default class ClaudeUsage extends View {
         this.pending = null;
         this.pendingAction = null;
         if (action === 'codexlogout') {
-            this.startAgent(this.store.providers.codex.logout.name, this.store.providers.codex.logout.argv);
+            this.startAgent('codex', this.store.providers.codex.logout.name, this.store.providers.codex.logout.argv);
             return;
         }
         if (action === 'logout') {
@@ -249,12 +249,12 @@ export default class ClaudeUsage extends View {
             this.refresh(cx);
         }
     }
+    /** Sign-in and sign-out act on the account shown, so they run under the config folder it was read from. */
     startClaude(name, argv) {
-        this.store.watchAccount('claude');
-        this.startAgent(name, argv);
+        this.startAgent('claude', name, system.withEnv(argv, claudeEnv(this.claudeContext().sessionConfigDir)));
     }
-    startAgent(name, argv) {
-        this.store.watchAccount(argv[0] === 'claude' ? 'claude' : 'codex');
+    startAgent(id, name, argv) {
+        this.store.watchAccount(id);
         const local = spaces().find(s => s.machine == null && s.active) ?? spaces().find(s => s.machine == null);
         if (local)
             run('tab.new', { name, space: local.id, argv });
@@ -570,7 +570,7 @@ export default class ClaudeUsage extends View {
                 ? this.button(t, `${id}-logout`, 'Log out', () => this.ask(id === 'claude' ? 'logout' : 'codexlogout', `Log out of ${provider.name}?`, `Runs ${provider.logout.argv.join(' ')} on this computer and removes its stored sign-in.`))
                 : this.button(t, `${id}-login`, 'Log in', () => id === 'claude'
                     ? this.startClaude(provider.login.name, provider.login.argv)
-                    : this.startAgent(provider.login.name, provider.login.argv), true)));
+                    : this.startAgent('codex', provider.login.name, provider.login.argv), true)));
         }
         content.child(h_flex().child(this.button(t, `${id}-refresh`, resource.loading ? 'Checking…' : 'Refresh', cx => this.refreshAccount(cx, id, true))));
         const sections = [v_flex().gap(8).child(this.heading(t, 'Sign-in')).child(content)];

@@ -1,10 +1,12 @@
 // Generated from src/runtime.ts. Edit the TS source, then run npm run verify.
 import { notify, playSound, setShared, shared } from 'herdr';
 import { CodexLogs, codexAccountFailure, codexAccountStatus } from './codex.js';
-import { auth, clearReports, configDir, connection, limits, projectsDir, system } from './data.js';
+import { auth, clearReports, configDir, connection, lastSessionConfigDir, limits, projectsDir, system, } from './data.js';
+import { object } from './json.js';
 import { createProviders } from './providers.js';
 import { claimAlert, UsageStore } from './store.js';
 import { PREFS_KEY, readPrefs, resetLabel } from './usage-model.js';
+const IDENTITIES = 'minimal-token-usage.accounts';
 let instance = null;
 let revision = 0;
 async function codexAccount() {
@@ -67,9 +69,13 @@ export function usageStore() {
     }), {
         connection: account => connection(configDir(account?.context ?? {})),
         accountChanged: clearReports,
+        sessionConfigDir: lastSessionConfigDir,
         claudeIdentity: {
-            read: () => shared('minimal-token-usage.account'),
-            write: identity => setShared('minimal-token-usage.account', identity),
+            read: directory => {
+                const identity = object(shared(IDENTITIES))?.[directory];
+                return typeof identity === 'string' ? identity : null;
+            },
+            write: (directory, identity) => setShared(IDENTITIES, { ...object(shared(IDENTITIES)), [directory]: identity }),
         },
     }, Date.now, changed);
     return instance;

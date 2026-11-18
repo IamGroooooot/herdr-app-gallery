@@ -1,5 +1,5 @@
 // Generated from src/reports.ts. Edit the TS source, then run npm run verify.
-/** Claude statusline reports saved by tap.sh: `{"reported_at": seconds, "report": payload}`. */
+/** Claude statusline reports saved by tap.sh: `{"reported_at": seconds, "config_dir": the session's CLAUDE_CONFIG_DIR, "report": payload}`. */
 import { finite, object, parseJson } from './json.js';
 export const CLAUDE_WINDOWS = { five_hour: '5h', seven_day: 'Week', spend_limit: 'Spend' };
 const KEEP = 8 * 86400000;
@@ -14,6 +14,7 @@ export function decodeReports(files, now, projects) {
     const stamps = {};
     const sessions = new Map();
     const expired = [];
+    let sessionConfigDir = null, sessionAt = 0;
     let reports = 0, failures = 0;
     for (const { name, text } of files) {
         const document = text == null ? undefined : parseJson(text);
@@ -29,6 +30,10 @@ export function decodeReports(files, now, projects) {
         const payload = object(wrapper.report) ?? wrapper;
         const reportedAt = payload !== wrapper && finite(wrapper.reported_at) && wrapper.reported_at > 0 ? wrapper.reported_at * 1000 : 0;
         reports++;
+        if (reportedAt >= sessionAt && typeof wrapper.config_dir === 'string') {
+            sessionConfigDir = wrapper.config_dir || null;
+            sessionAt = reportedAt;
+        }
         const sid = typeof payload.session_id === 'string' && payload.session_id ? payload.session_id : name.replace(/\.json$/, '');
         const model = object(payload.model)?.display_name;
         const transcript = typeof payload.transcript_path === 'string' ? payload.transcript_path : null;
@@ -54,5 +59,5 @@ export function decodeReports(files, now, projects) {
             expired.push(name);
     }
     const reportedAt = Math.max(0, ...Object.values(stamps).map(s => s[2])) || null;
-    return { limits: { windows, sessions, reports, reportedAt }, failures, expired };
+    return { limits: { windows, sessions, reports, reportedAt, sessionConfigDir }, failures, expired };
 }

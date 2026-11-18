@@ -1,8 +1,9 @@
 import * as fs from 'fs/promises';
 import { appHome, exec, hc, home, readTextFile, writeTextFile } from 'herdr';
+import { finite, object, parseJson } from './json.js';
 import { decodeReports } from './reports.js';
-import { createSystem } from './system.js';
-import type { ClaudeAuth, ClaudeLimits, ConnectionResult, Tokens } from './types.js';
+import { createSystem, type EnvVar } from './system.js';
+import type { ClaudeAuth, ClaudeLimits, ClaudeSettings, ConnectionResult, Tokens } from './types.js';
 
 export const system = createSystem(exec, process.platform);
 
@@ -10,14 +11,10 @@ export const dataDir = () => `${appHome()}/data/minimal-token-usage`;
 export const tapPath = () => `${appHome()}/mods/minimal-token-usage/tap.sh`;
 const CHUNK = 4 * 1024 * 1024;
 
-const parse = (text: string | null) => {
-  if (text == null || text === '') return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-};
+/** The JSON object in `text`; null for anything else. */
+const parseObject = (text: string | null) => (text ? object(parseJson(text)) : null);
+const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined);
+const count = (value: unknown) => (finite(value) ? value : 0);
 
 const shq = (s: string) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
@@ -40,17 +37,38 @@ export async function ensureDataDir() {
   await system.restrict(dataDir());
 }
 
+/** The variable a Claude CLI needs to act on the account of `sessionConfigDir`; none for Herdr's own account. */
+export const claudeEnv = (sessionConfigDir: string | null | undefined): EnvVar | undefined =>
+  sessionConfigDir ? ['CLAUDE_CONFIG_DIR', sessionConfigDir] : undefined;
+
+/** `claude auth status --json`, keeping only the fields of the right type. */
+function decodeAuth(status: Record<string, unknown>): ClaudeAuth {
+  return {
+    loggedIn: typeof status.loggedIn === 'boolean' ? status.loggedIn : undefined,
+    configDirectory: text(status.configDirectory),
+    projectsDirectory: text(status.projectsDirectory),
+    email: text(status.email),
+    orgId: text(status.orgId),
+    authMethod: text(status.authMethod),
+    subscriptionType: text(status.subscriptionType),
+    loginExpiresAt: text(status.loginExpiresAt),
+  };
+}
+
+/** The account of the session that reported last, which need not be the one Herdr's own environment names. */
 export async function auth(): Promise<ClaudeAuth> {
+  const sessionConfigDir = await lastSessionConfigDir();
   try {
-    const r = await system.cli('claude', ['auth', 'status', '--json']);
-    const s = parse(r.stdout.trim());
-    if (s && typeof s === 'object') {
-      if (!s.configDirectory) s.configDirectory = (await system.claudeConfigDir()) ?? undefined;
-      return s;
-    }
-    return { error: (r.stderr || r.stdout).trim().split('\n').pop() || `claude exited ${r.code}` };
+    const r = await system.cli('claude', ['auth', 'status', '--json'], { env: claudeEnv(sessionConfigDir) });
+    const status = parseObject(r.stdout.trim());
+    if (!status)
+      return { error: (r.stderr || r.stdout).trim().split('\n').pop() || `claude exited ${r.code}`, sessionConfigDir };
+    const decoded = decodeAuth(status);
+    const configDirectory =
+      decoded.configDirectory ?? sessionConfigDir ?? (await system.claudeConfigDir()) ?? undefined;
+    return { ...decoded, configDirectory, sessionConfigDir };
   } catch (e) {
-    return { missing: true, error: String(e instanceof Error ? e.message : e) };
+    return { missing: true, error: String(e instanceof Error ? e.message : e), sessionConfigDir };
   }
 }
 
@@ -75,13 +93,12 @@ function unwrap(command: string): string | null {
 
 export async function connection(dir: string): Promise<ConnectionResult> {
   const path = `${dir}/settings.json`;
-  const text = await readTextFile(path);
-  const settings = text == null ? {} : parse(text);
-  if (!settings || typeof settings !== 'object' || Array.isArray(settings))
-    return { path, error: `${path} is not valid JSON` };
-  const command = settings.statusLine?.command;
+  const saved = await readTextFile(path);
+  const settings: ClaudeSettings | null = saved == null ? {} : parseObject(saved);
+  if (!settings) return { path, error: `${path} is not valid JSON` };
+  const command = object(settings.statusLine)?.command;
   const connected = typeof command === 'string' && command.includes('/mods/minimal-token-usage/tap.sh');
-  return { path, text, settings, connected, command: connected ? unwrap(command) : null };
+  return { path, text: saved, settings, connected, command: connected ? unwrap(command) : null };
 }
 
 /** Herdr's write keeps the file's mode and symlink. */
@@ -139,6 +156,8 @@ async function readReports(projects?: string) {
 const removeReports = (names: string[]) =>
   Promise.all(names.map(name => fs.unlink(`${reportsDir()}/${name}`).catch((): null => null)));
 
+export const lastSessionConfigDir = async () => (await readReports()).limits.sessionConfigDir;
+
 export async function clearReports() {
   await removeReports((await readReports()).names);
 }
@@ -155,9 +174,10 @@ export async function limits(projects?: string): Promise<ClaudeLimits> {
 
 export async function sessionOf(address: string, dir: string) {
   const r = await hc(['get', address, '--json']);
-  const pid = parse(r.stdout)?.foreground?.pid;
-  if (!pid) return null;
-  return parse(await readTextFile(`${dir}/sessions/${pid}.json`).catch((): null => null))?.sessionId ?? null;
+  const pid = object(parseObject(r.stdout)?.foreground)?.pid;
+  if (!finite(pid) && !text(pid)) return null;
+  const session = parseObject(await readTextFile(`${dir}/sessions/${pid}.json`).catch((): null => null));
+  return text(session?.sessionId) ?? null;
 }
 
 export async function findTranscript(dir: string, sid: string) {
@@ -243,19 +263,19 @@ export class Totals {
 
   take(s: FileTotals, line: string) {
     if (!line.includes('"usage"')) return;
-    const r = parse(line);
-    const m = r?.message;
-    if (!m?.usage || m.model === '<synthetic>') return;
-    const key = m.id ?? r.requestId ?? r.uuid;
+    const r = parseObject(line);
+    const m = object(r?.message);
+    const u = object(m?.usage);
+    if (!r || !m || !u || m.model === '<synthetic>') return;
+    const key = text(m.id) ?? text(r.requestId) ?? text(r.uuid);
     if (key) {
       if (s.seen.has(key)) return;
       s.seen.add(key);
     }
-    const u = m.usage;
-    s.output += u.output_tokens ?? 0;
-    s.input += (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
-    s.cacheRead += u.cache_read_input_tokens ?? 0;
-    if (m.model) s.model = m.model;
+    s.output += count(u.output_tokens);
+    s.input += count(u.input_tokens) + count(u.cache_creation_input_tokens);
+    s.cacheRead += count(u.cache_read_input_tokens);
+    s.model = text(m.model) ?? s.model;
   }
 }
 

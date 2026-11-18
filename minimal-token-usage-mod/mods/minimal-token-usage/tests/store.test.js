@@ -60,6 +60,7 @@ function fixture() {
     counts,
     states,
     claude,
+    now: () => now,
     advance: ms => {
       now += ms;
     },
@@ -179,7 +180,7 @@ test('a remembered identity prevents previous-account reports returning after re
     },
     claudeIdentity: {
       read: () => remembered,
-      write: id => {
+      write: (_directory, id) => {
         remembered = id;
       },
     },
@@ -187,6 +188,55 @@ test('a remembered identity prevents previous-account reports returning after re
   await store.poll();
   assert.equal(cleared, 1);
   assert.equal(remembered, 'a');
+});
+
+test('a reply from a session under another config folder shows that folder’s account, and keeps both accounts’ reports', async () => {
+  const f = fixture();
+  const inFolder = (identity, sessionConfigDir) => ({
+    kind: 'signed-in',
+    method: 'claude.ai',
+    context: { identity, sessionConfigDir, configDirectory: sessionConfigDir ?? '/home/.claude' },
+  });
+  let sessionConfigDir = null;
+  let cleared = 0;
+  const remembered = {};
+  const accounts = { '/home/.claude': 'own', '/accounts/work': 'work' };
+  f.store.providers.claude.readAccount = async () =>
+    inFolder(accounts[sessionConfigDir ?? '/home/.claude'], sessionConfigDir);
+  const store = new UsageStore(
+    f.store.providers,
+    {
+      connection: async () => ({ connected: true }),
+      accountChanged: async () => {
+        cleared++;
+      },
+      sessionConfigDir: async () => sessionConfigDir,
+      claudeIdentity: {
+        read: directory => remembered[directory] ?? null,
+        write: (directory, identity) => {
+          remembered[directory] = identity;
+        },
+      },
+    },
+    f.now,
+  );
+  await store.poll();
+  assert.equal(store.accounts.claude.value.context.identity, 'own');
+  sessionConfigDir = '/accounts/work';
+  f.advance(10000);
+  await store.poll();
+  assert.equal(store.accounts.claude.value.context.identity, 'work');
+  assert.equal(store.usage.claude.value.windows.length, 1, 'its limits are read at once');
+  sessionConfigDir = null;
+  f.advance(10000);
+  await store.poll();
+  assert.equal(store.accounts.claude.value.context.identity, 'own');
+  assert.equal(cleared, 0, 'two folders are two accounts, not one account that changed');
+  assert.deepEqual(remembered, { '/home/.claude': 'own', '/accounts/work': 'work' });
+
+  accounts['/home/.claude'] = 'someone else';
+  await store.refreshAccount('claude', true);
+  assert.equal(cleared, 1, 'another sign-in in the same folder still drops its old reports');
 });
 
 test('Connect and Disconnect show at once; settings that cannot be read are an error, not a missing connection', async () => {

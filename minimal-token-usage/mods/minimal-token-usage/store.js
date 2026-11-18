@@ -6,14 +6,14 @@ export class UsageStore {
     accounts;
     usage;
     connection;
-    lastIdentity = {};
+    sessionConfigDir;
+    /** Keyed by provider and config folder: two folders hold two accounts, and neither replaces the other. */
+    lastIdentity = new Map();
     watchUntil = { claude: 0, codex: 0 };
     constructor(providers, io, clock = Date.now, changed = () => { }) {
         this.providers = providers;
         this.clock = clock;
-        const remembered = io.claudeIdentity?.read();
-        if (remembered)
-            this.lastIdentity.claude = remembered;
+        this.sessionConfigDir = new Resource(async () => (await io.sessionConfigDir?.()) ?? null, clock);
         this.usage = {
             claude: new Resource(providers.claude.readUsage, clock, changed),
             codex: new Resource(providers.codex.readUsage, clock, changed),
@@ -22,7 +22,10 @@ export class UsageStore {
             const next = await providers[id].readAccount();
             const previous = this.accounts[id].value;
             const identity = next.kind === 'signed-in' ? next.context?.identity : undefined;
-            const switched = Boolean(identity && this.lastIdentity[id] && this.lastIdentity[id] !== identity);
+            const directory = next.context?.configDirectory ?? '';
+            const key = `${id}:${directory}`;
+            const last = this.lastIdentity.get(key) ?? (id === 'claude' ? io.claudeIdentity?.read(directory) : null);
+            const switched = Boolean(identity && last && last !== identity);
             if (switched || previous?.kind !== next.kind) {
                 this.usage[id].invalidate();
                 if (id === 'claude')
@@ -30,10 +33,10 @@ export class UsageStore {
                 if (switched && id === 'claude')
                     await io.accountChanged();
             }
-            if (identity) {
-                this.lastIdentity[id] = identity;
+            if (identity && identity !== last) {
+                this.lastIdentity.set(key, identity);
                 if (id === 'claude')
-                    io.claudeIdentity?.write(identity);
+                    io.claudeIdentity?.write(directory, identity);
             }
             return next;
         }, clock, changed);
@@ -46,6 +49,7 @@ export class UsageStore {
         }, clock, changed);
     }
     async poll() {
+        await this.followSession();
         await Promise.all(['claude', 'codex'].map(async (id) => {
             const a = this.accounts[id];
             const fast = a.error || !a.value || a.value.kind === 'signed-out' || this.clock() < this.watchUntil[id];
@@ -55,6 +59,16 @@ export class UsageStore {
             if (a.value?.kind === 'signed-in')
                 await this.usage[id].refresh(id === 'claude' ? 10000 : 15000);
         }));
+    }
+    /** A reply from a session under another `CLAUDE_CONFIG_DIR` makes that folder's account the one shown. */
+    async followSession() {
+        const latest = this.sessionConfigDir;
+        await latest.refresh(10000);
+        const account = this.accounts.claude;
+        if (latest.checkedAt === null || latest.error || !account.value || account.loading)
+            return;
+        if ((account.value.context?.sessionConfigDir ?? null) !== latest.value)
+            account.invalidate();
     }
     async refreshAccount(id, force = false) {
         await this.accounts[id].refresh(force ? 0 : 10000);

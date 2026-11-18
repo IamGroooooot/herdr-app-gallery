@@ -171,6 +171,31 @@ for (const [shell, platform, remap] of shells) {
     assert.deepEqual(await cli({ HOME: home, XDG_CONFIG_HOME: join(home, 'xdg') }), ran('v21.0.0'));
   });
 
+  test(`${shell}: a CLI can run with one variable set, on Herdr's PATH or under nvm`, async t => {
+    const home = temp(t),
+      onPath = join(home, 'on path'),
+      value = `/tmp/a 'b' = c`,
+      env = { env: ['CLAUDE_CONFIG_DIR', value] };
+    const system = extra => codex('', { HOME: home, NVM_DIR: null, XDG_CONFIG_HOME: null, ...extra }).system;
+    await assert.rejects(system().cli(CLI, ['login', 'status'], env), /ENOENT/);
+    mkdirSync(onPath);
+    writeFileSync(join(onPath, CLI), '#!/bin/sh\nprintf "%s|%s" "$CLAUDE_CONFIG_DIR" "$*"\nexit 3\n', { mode: 0o755 });
+    const path = { PATH: `${onPath}:${process.env.PATH}` };
+    assert.deepEqual(await system(path).cli(CLI, ['auth', 'status'], env), {
+      code: 3,
+      stdout: `${value}|auth status`,
+      stderr: '',
+    });
+    // A login tab gets the same variable through a command line.
+    const [program, ...args] = system().withEnv([CLI, 'auth', 'login'], env.env);
+    const tab = await execWith(path, remap)(program, args);
+    assert.equal(tab.stdout, `${value}|auth login`);
+    assert.deepEqual(system().withEnv([CLI], undefined), [CLI]);
+    if (platform === 'windows') return;
+    nvmCli(join(home, '.nvm'), 'v20.1.0');
+    assert.deepEqual(await system().cli(CLI, ['login', 'status'], env), ran('v20.1.0'));
+  });
+
   test(`${shell}: a CLI that is nowhere fails the way Herdr reports it`, async t => {
     await assert.rejects(cli({ HOME: temp(t) }), /ENOENT/);
   });

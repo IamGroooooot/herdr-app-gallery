@@ -20,7 +20,7 @@ Click the panel or its settings icon to open Usage settings, with three pages: U
 
 ## Data sources
 
-Claude limits come from the statusline payload after each reply. Connect wraps the existing statusline command and preserves its input and output. When several Claude accounts share that command, only sessions of the signed-in account count. Codex limits come from local session-log events, checked every 15 seconds. The mod does not read credential files or call account usage endpoints. Reports are local snapshots, so after an account change the old limits can remain until the next reply.
+Claude limits come from the statusline payload after each reply. Connect wraps the existing statusline command and preserves its input and output. The panel shows one Claude account: the one whose session replied last. A session started with its own `CLAUDE_CONFIG_DIR` reports that folder, and the panel, the Claude account page, and Connect then follow it; only that account's sessions count toward the limits. Codex limits come from local session-log events, checked every 15 seconds. The mod does not read credential files or call account usage endpoints. Reports are local snapshots, so after an account change the old limits can remain until the next reply.
 
 ## Files
 

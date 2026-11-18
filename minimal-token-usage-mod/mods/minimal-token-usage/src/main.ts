@@ -19,6 +19,7 @@ import {
   themes,
 } from 'herdr';
 import {
+  claudeEnv,
   configDir,
   connect,
   disconnect,
@@ -28,6 +29,7 @@ import {
   projectsDir,
   prune,
   sessionOf,
+  system,
   Totals,
   tapPath,
 } from './data.js';
@@ -259,7 +261,7 @@ export default class ClaudeUsage extends View {
     this.pending = null;
     this.pendingAction = null;
     if (action === 'codexlogout') {
-      this.startAgent(this.store.providers.codex.logout.name, this.store.providers.codex.logout.argv);
+      this.startAgent('codex', this.store.providers.codex.logout.name, this.store.providers.codex.logout.argv);
       return;
     }
     if (action === 'logout') {
@@ -297,13 +299,13 @@ export default class ClaudeUsage extends View {
     }
   }
 
+  /** Sign-in and sign-out act on the account shown, so they run under the config folder it was read from. */
   startClaude(name: string, argv: string[]) {
-    this.store.watchAccount('claude');
-    this.startAgent(name, argv);
+    this.startAgent('claude', name, system.withEnv(argv, claudeEnv(this.claudeContext().sessionConfigDir)));
   }
 
-  startAgent(name: string, argv: string[]) {
-    this.store.watchAccount(argv[0] === 'claude' ? 'claude' : 'codex');
+  startAgent(id: ProviderId, name: string, argv: string[]) {
+    this.store.watchAccount(id);
     const local = spaces().find(s => s.machine == null && s.active) ?? spaces().find(s => s.machine == null);
     if (local) run('tab.new', { name, space: local.id, argv });
     else run('space.new', { name, argv, machine: '' });
@@ -710,7 +712,7 @@ export default class ClaudeUsage extends View {
                   () =>
                     id === 'claude'
                       ? this.startClaude(provider.login.name, provider.login.argv)
-                      : this.startAgent(provider.login.name, provider.login.argv),
+                      : this.startAgent('codex', provider.login.name, provider.login.argv),
                   true,
                 ),
           ),

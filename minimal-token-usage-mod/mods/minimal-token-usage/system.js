@@ -59,8 +59,13 @@ const NODE_BINS = [
 ].join('\n');
 // Such a CLI is a Node script (`#!/usr/bin/env node`): its folder goes first on PATH so it runs with its own node.
 const RUN_IN = 'PATH="$1:$PATH"; export PATH; program="$1/$2"; shift 2; exec "$program" "$@"';
+// Herdr's exec cannot set a variable for the program it runs, so a shell sets it. `$1` is `NAME=value`.
+const IN_ENV = 'export "${1?}"; shift; ';
+const RUN = 'exec "$@"';
+/** What a shell answers when the program is not there. */
+const NOT_FOUND = 127;
 /** The POSIX scripts, for scripts/lint.mjs to hand to shellcheck. */
-export const POSIX_SCRIPTS = { READ, LINE_END, CODEX_TAILS, NODE_BINS, RUN_IN };
+export const POSIX_SCRIPTS = { READ, LINE_END, CODEX_TAILS, NODE_BINS, RUN_IN, IN_ENV: IN_ENV + RUN };
 // No double quotes in the PowerShell text: they would need escaping on a Windows command line.
 // Output is written as UTF-8 bytes because Windows PowerShell encodes strings with the console code page.
 const PS_PRELUDE = [
@@ -96,6 +101,12 @@ const PS_CODEX_TAILS = [
     `  $n=[Math]::Min($size,${TAIL_BYTES}); [void]$s.Seek(-$n,[IO.SeekOrigin]::End); $b=Take $s $n; $s.Dispose();`,
     "  W('@file '+$size+' '+$p+[char]10);",
     `  [Text.Encoding]::UTF8.GetString($b).Split([char]10) | Where-Object {$_.StartsWith('{') -and $_.Contains($needle)} | Select-Object -Last ${TAIL_LINES} | ForEach-Object {W($_.TrimEnd([char]13)+[char]10)}}`,
+].join(' ');
+const PS_IN_ENV = [
+    "$pair=([string]$args[0]).Split([char]61,2); Set-Item -LiteralPath ('Env:'+$pair[0]) -Value $pair[1];",
+    '$rest=@($args | Select-Object -Skip 2);',
+    `try{& $args[1] @rest}catch [System.Management.Automation.CommandNotFoundException]{exit ${NOT_FOUND}};`,
+    'exit $LASTEXITCODE',
 ].join(' ');
 const PS_CLAUDE_CONFIG_DIR = "$v=[Environment]::GetEnvironmentVariable('CLAUDE_CONFIG_DIR'); if($v){W($v)}";
 function parseSizes(stdout, files) {
@@ -146,12 +157,13 @@ function newestNodeBin(dirs) {
     versioned.sort((a, b) => b.v[0] - a.v[0] || b.v[1] - a.v[1] || b.v[2] - a.v[2]);
     return versioned[0]?.dir ?? null;
 }
+const psq = (s) => `'${s.replace(/'/g, "''")}'`;
+const psCommand = (script, args) => `& { ${PS_PRELUDE} ${script} } ${args.map(psq).join(' ')}`;
 const knownText = (known) => `|${[...known].map(([path, size]) => `${size} ${path}`).join('|')}|`;
 const isWindows = (platform) => /^win/i.test(platform);
 export function createSystem(exec, platform) {
-    const psq = (s) => `'${s.replace(/'/g, "''")}'`;
     const sh = (script, args = []) => exec('/bin/sh', ['-c', script, 'sh', ...args], TIMEOUT);
-    const ps = (script, args = []) => exec('powershell', ['-NoProfile', '-NonInteractive', '-Command', `& { ${PS_PRELUDE} ${script} } ${args.map(psq).join(' ')}`], TIMEOUT);
+    const ps = (script, args = []) => exec('powershell', ['-NoProfile', '-NonInteractive', '-Command', psCommand(script, args)], TIMEOUT);
     const windows = isWindows(platform);
     const run = (posix, win, args = []) => (windows ? ps(win, args) : sh(posix, args));
     return {
@@ -187,8 +199,18 @@ export function createSystem(exec, platform) {
                 await exec('chmod', ['700', dir], TIMEOUT).catch(() => null);
         },
         async cli(name, args, options) {
+            const { env, ...rest } = options ?? {};
+            const pair = env ? [`${env[0]}=${env[1]}`] : [];
+            const posix = (script, argv) => exec('/bin/sh', ['-c', (env ? IN_ENV : '') + script, 'sh', ...pair, ...argv], rest);
             try {
-                return await exec(name, args, options);
+                if (!env)
+                    return await exec(name, args, rest);
+                const r = await (windows
+                    ? exec('powershell', ['-NoProfile', '-NonInteractive', '-Command', psCommand(PS_IN_ENV, [...pair, name, ...args])], rest)
+                    : posix(RUN, [name, ...args]));
+                if (r.code !== NOT_FOUND)
+                    return r;
+                throw new Error(`ENOENT: ${name} not found`);
             }
             catch (reason) {
                 // A CLI Herdr did find but that was slow or refused is not looked for elsewhere.
@@ -198,8 +220,16 @@ export function createSystem(exec, platform) {
                 const dir = newestNodeBin((found?.stdout ?? '').split('\n'));
                 if (!dir)
                     throw reason;
-                return exec('/bin/sh', ['-c', RUN_IN, 'sh', dir, name, ...args], options);
+                return posix(RUN_IN, [dir, name, ...args]);
             }
+        },
+        withEnv(argv, env) {
+            if (!env)
+                return argv;
+            const pair = `${env[0]}=${env[1]}`;
+            return windows
+                ? ['powershell', '-NoProfile', '-Command', psCommand(PS_IN_ENV, [pair, ...argv])]
+                : ['/usr/bin/env', pair, ...argv];
         },
     };
 }

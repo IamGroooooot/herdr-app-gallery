@@ -80,10 +80,12 @@ test('a Claude account is told apart by email and organization; a failed or miss
 
   const account = auth => providers({ claudeAccount: async () => auth }).claude.readAccount();
   assert.equal((await account({ missing: true, error: 'spawn claude ENOENT' })).kind, 'unavailable');
-  assert.deepEqual(await account({ loggedIn: false, configDirectory: '/c' }), {
+  assert.deepEqual(await account({ loggedIn: false, configDirectory: '/c', sessionConfigDir: '/c' }), {
     kind: 'signed-out',
-    context: { configDirectory: '/c', projectsDirectory: undefined, identity: undefined },
+    context: { sessionConfigDir: '/c', configDirectory: '/c', projectsDirectory: undefined, identity: undefined },
   });
+  // Even a missing CLI says which folder was asked about, so the same folder is not asked again at once.
+  assert.equal((await account({ missing: true, sessionConfigDir: '/c' })).context.sessionConfigDir, '/c');
   await assert.rejects(account({ error: 'token expired' }), { message: 'token expired' });
   await assert.rejects(account({}));
 });
@@ -172,6 +174,8 @@ test('each provider row says why it has no limits to show', () => {
   assert.equal(row({ account: missing }).detail, 'Claude Code is not installed.');
   // Not connected is not "not signed in": the row says the sign-in was seen.
   assert.match(row({ connection: read({ connected: false }) }).message, /^Signed in/);
+  // Before the first report the row says what to do, since limits only arrive with a reply.
+  assert.equal(row({ usage: read(null) }).message, 'Send a message to see usage');
 });
 
 test('a failed refresh keeps the last limits and flags them; an hour-old report is marked stale', () => {
