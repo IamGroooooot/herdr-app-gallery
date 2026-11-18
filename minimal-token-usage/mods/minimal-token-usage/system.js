@@ -26,8 +26,10 @@ const LINE_END = [
 // Rollouts are append-only, so an unchanged size means unchanged usage. Only usage events
 // leave the script; a tail cut mid-line cannot pass for one, because events start with "{".
 // One `ls` gives both the newest-first order and the sizes, so an idle poll costs three processes.
+// The newest `turn_context` names the session's folder and model; it comes first.
 const CODEX_TAILS = [
     'cd "${CODEX_HOME:-$HOME/.codex}/sessions" 2>/dev/null || exit 3',
+    `events() { dd if="$1" bs=${BLOCK} skip="$2" 2>/dev/null | LC_ALL=C grep -F "\\"$3\\"" | LC_ALL=C grep '^{'; }`,
     'known="$1"',
     'set -- [0-9]*/[0-9]*/[0-9]*/',
     `[ "$#" -le ${DAYS} ] || shift "$(($# - ${DAYS}))"`,
@@ -43,7 +45,8 @@ const CODEX_TAILS = [
     `  printf '@file %s %s\\n' "$size" "$f"`,
     '  skip=0',
     `  [ "$size" -le ${TAIL_BYTES} ] || skip="$(((size - ${TAIL_BYTES}) / ${BLOCK}))"`,
-    `  dd if="$f" bs=${BLOCK} skip="$skip" 2>/dev/null | LC_ALL=C grep -F '"token_count"' | LC_ALL=C grep '^{' | tail -n ${TAIL_LINES}`,
+    `  events "$f" "$skip" turn_context | tail -n 1`,
+    `  events "$f" "$skip" token_count | tail -n ${TAIL_LINES}`,
     'done',
     'exit 0',
 ].join('\n');
@@ -92,7 +95,7 @@ const PS_LINE_END = [
 const PS_CODEX_TAILS = [
     "$r=$env:CODEX_HOME; if(-not $r){$r=Join-Path $HOME '.codex'}; $r=Join-Path $r 'sessions';",
     'if(-not (Test-Path -LiteralPath $r -PathType Container)){exit 3};',
-    "$known=[string]($args[0]); $needle=[char]34+'token_count'+[char]34;",
+    "$known=[string]($args[0]); $needle=[char]34+'token_count'+[char]34; $context=[char]34+'turn_context'+[char]34;",
     'function Sub($d){Get-ChildItem -LiteralPath $d.FullName -Directory};',
     `$days=@(Get-ChildItem -LiteralPath $r -Directory | ForEach-Object {Sub $_} | ForEach-Object {Sub $_} | Sort-Object FullName -Descending | Select-Object -First ${DAYS});`,
     `$files=@($days | ForEach-Object {Get-ChildItem -LiteralPath $_.FullName -File -Filter '*.jsonl'} | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First ${LOGS});`,
@@ -100,7 +103,8 @@ const PS_CODEX_TAILS = [
     "  $size=$s.Length; if($known.Contains('|'+$size+' '+$p+'|')){$s.Dispose();W('@same '+$size+' '+$p+[char]10);continue};",
     `  $n=[Math]::Min($size,${TAIL_BYTES}); [void]$s.Seek(-$n,[IO.SeekOrigin]::End); $b=Take $s $n; $s.Dispose();`,
     "  W('@file '+$size+' '+$p+[char]10);",
-    `  [Text.Encoding]::UTF8.GetString($b).Split([char]10) | Where-Object {$_.StartsWith('{') -and $_.Contains($needle)} | Select-Object -Last ${TAIL_LINES} | ForEach-Object {W($_.TrimEnd([char]13)+[char]10)}}`,
+    "  $l=@([Text.Encoding]::UTF8.GetString($b).Split([char]10) | Where-Object {$_.StartsWith('{')});",
+    `  @($l | Where-Object {$_.Contains($context)} | Select-Object -Last 1)+@($l | Where-Object {$_.Contains($needle)} | Select-Object -Last ${TAIL_LINES}) | ForEach-Object {W($_.TrimEnd([char]13)+[char]10)}}`,
 ].join(' ');
 const PS_IN_ENV = [
     "$pair=([string]$args[0]).Split([char]61,2); Set-Item -LiteralPath ('Env:'+$pair[0]) -Value $pair[1];",

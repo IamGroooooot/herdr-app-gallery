@@ -1,6 +1,14 @@
 import { finite, object } from './json.js';
 import type { ReadState } from './resource.js';
-import type { AccountState, Connection, DisplayProvider, Prefs, UsageProvider, UsageReport } from './types.js';
+import type {
+  AccountState,
+  Connection,
+  DisplayProvider,
+  LoggedSession,
+  Prefs,
+  UsageProvider,
+  UsageReport,
+} from './types.js';
 
 export interface ProviderDisplayInput {
   provider: Pick<UsageProvider, 'id' | 'name'>;
@@ -55,6 +63,12 @@ export function usageProviders(inputs: readonly ProviderDisplayInput[], now = Da
     };
   });
 }
+/** A session in a log is listed for a day after it last used tokens. */
+const LISTED_FOR = 86400000;
+export const recentSessions = (sessions: readonly LoggedSession[] | undefined, now = Date.now()): LoggedSession[] =>
+  (sessions ?? []).filter(s => now - s.at < LISTED_FOR);
+/** The last part of a path, POSIX or Windows. */
+export const folderName = (path: string | null): string => path?.split(/[\\/]/).filter(Boolean).pop() ?? '';
 export type StripStyle = 'gauge' | 'segments' | 'meter';
 export const STRIP_STYLES: readonly { id: StripStyle; label: string }[] = [
   { id: 'gauge', label: 'Gauge line' },

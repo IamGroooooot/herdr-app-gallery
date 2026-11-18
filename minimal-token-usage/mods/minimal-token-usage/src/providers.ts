@@ -29,7 +29,7 @@ export function codexReport(usage: CodexUsage): UsageReport {
     }),
   );
   const reportedAt = usage.samples.length ? Math.max(...usage.samples.map(sample => sample.at * 1000)) : null;
-  return { windows, reportedAt, sessions: new Map() };
+  return { windows, reportedAt, sessions: new Map(), logged: usage.sessions };
 }
 export function createProviders(source: ProviderSources): Record<'claude' | 'codex', UsageProvider> {
   return {

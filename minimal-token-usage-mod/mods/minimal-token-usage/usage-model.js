@@ -52,6 +52,11 @@ export function usageProviders(inputs, now = Date.now()) {
         };
     });
 }
+/** A session in a log is listed for a day after it last used tokens. */
+const LISTED_FOR = 86400000;
+export const recentSessions = (sessions, now = Date.now()) => (sessions ?? []).filter(s => now - s.at < LISTED_FOR);
+/** The last part of a path, POSIX or Windows. */
+export const folderName = (path) => path?.split(/[\\/]/).filter(Boolean).pop() ?? '';
 export const STRIP_STYLES = [
     { id: 'gauge', label: 'Gauge line' },
     { id: 'segments', label: 'Segments' },

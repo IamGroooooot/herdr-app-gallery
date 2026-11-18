@@ -23,7 +23,7 @@ export function codexReport(usage) {
         };
     }));
     const reportedAt = usage.samples.length ? Math.max(...usage.samples.map(sample => sample.at * 1000)) : null;
-    return { windows, reportedAt, sessions: new Map() };
+    return { windows, reportedAt, sessions: new Map(), logged: usage.sessions };
 }
 export function createProviders(source) {
     return {

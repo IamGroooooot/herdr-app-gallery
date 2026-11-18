@@ -1,7 +1,7 @@
 /** Never credentials or conversation content. */
 import { finite, object, parseJson } from './json.js';
 import { type LogTails, notInstalled } from './system.js';
-import type { AccountState } from './types.js';
+import type { AccountState, LoggedSession } from './types.js';
 
 export interface CodexWindow {
   key: string;
@@ -17,7 +17,41 @@ export interface CodexSample {
 }
 export interface CodexUsage {
   samples: CodexSample[];
+  sessions: LoggedSession[];
   error: string | null;
+}
+type SessionTotals = Omit<LoggedSession, 'path'>;
+
+const eventOf = (line: string, type: string) => {
+  if (!line.includes(`"${type}"`)) return null;
+  const event = object(parseJson(line));
+  const payload = object(event?.payload);
+  const named = event?.type === type || (event?.type === 'event_msg' && payload?.type === type);
+  return event && payload && named ? { event, payload } : null;
+};
+
+/** A session's running totals are in its last usage event; its folder and model in its last turn context.
+ *  `lines` are in log order. Codex counts cached input inside input, so the two are told apart here. */
+export function sessionTotals(lines: readonly string[]): SessionTotals | null {
+  let totals: Pick<SessionTotals, 'at' | 'input' | 'output' | 'cacheRead'> | null = null;
+  let context: Record<string, unknown> | null = null;
+  for (let i = lines.length - 1; i >= 0 && !(totals && context); i--) {
+    context ??= eventOf(lines[i], 'turn_context')?.payload ?? null;
+    if (totals) continue;
+    const usage = eventOf(lines[i], 'token_count');
+    const total = object(object(usage?.payload.info)?.total_token_usage);
+    const at = typeof usage?.event.timestamp === 'string' ? Date.parse(usage.event.timestamp) : NaN;
+    if (!total || !finite(at)) continue;
+    const tokens = (key: string) => (finite(total[key]) && total[key] > 0 ? total[key] : 0);
+    const cacheRead = Math.min(tokens('cached_input_tokens'), tokens('input_tokens'));
+    totals = { at, cacheRead, input: tokens('input_tokens') - cacheRead, output: tokens('output_tokens') };
+  }
+  if (!totals) return null;
+  return {
+    ...totals,
+    folder: typeof context?.cwd === 'string' && context.cwd ? context.cwd : null,
+    model: typeof context?.model === 'string' && context.model ? context.model : null,
+  };
 }
 
 export function usageEvent(line: string): CodexSample | null {
@@ -56,24 +90,31 @@ export function latestSamples(lines: readonly string[]): CodexSample[] {
   return [...byLimit.values()];
 }
 
+interface LogFile {
+  size: number;
+  samples: CodexSample[];
+  session: SessionTotals | null;
+}
 export class CodexLogs {
-  private files = new Map<string, { size: number; samples: CodexSample[] }>();
+  private files = new Map<string, LogFile>();
   constructor(private readonly tails: (known: ReadonlyMap<string, number>) => Promise<LogTails | null>) {}
 
   async read(): Promise<CodexUsage> {
     const result = await this.tails(new Map([...this.files].map(([path, file]) => [path, file.size])));
-    if (!result) return { samples: [], error: 'No Codex session logs found.' };
-    const files = new Map<string, { size: number; samples: CodexSample[] }>();
+    if (!result) return { samples: [], sessions: [], error: 'No Codex session logs found.' };
+    const files = new Map<string, LogFile>();
     const latest = new Map<string, CodexSample>();
     let failures = result.failures;
     for (const tail of result.tails) {
-      const samples = tail.lines ? latestSamples(tail.lines) : this.files.get(tail.path)?.samples;
-      if (!samples) {
+      const file = tail.lines
+        ? { size: tail.size, samples: latestSamples(tail.lines), session: sessionTotals(tail.lines) }
+        : this.files.get(tail.path);
+      if (!file) {
         failures++;
         continue;
       }
-      files.set(tail.path, { size: tail.size, samples });
-      for (const sample of samples) {
+      files.set(tail.path, file);
+      for (const sample of file.samples) {
         const newest = latest.get(sample.limit_id);
         if (!newest || sample.at > newest.at) latest.set(sample.limit_id, sample);
       }
@@ -81,7 +122,10 @@ export class CodexLogs {
     this.files = files;
     const rank = (s: CodexSample) => (s.limit_id === 'codex' ? '0' : '1') + s.limit_id;
     const samples = [...latest.values()].sort((a, b) => (rank(a) < rank(b) ? -1 : rank(a) > rank(b) ? 1 : 0));
-    return { samples, error: failures ? `Could not read ${failures} session logs.` : null };
+    const sessions = [...files]
+      .flatMap(([path, file]) => (file.session ? [{ path, ...file.session }] : []))
+      .sort((a, b) => b.at - a.at);
+    return { samples, sessions, error: failures ? `Could not read ${failures} session logs.` : null };
   }
 }
 

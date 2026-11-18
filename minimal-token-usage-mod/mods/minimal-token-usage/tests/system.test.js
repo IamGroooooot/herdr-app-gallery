@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { appendFileSync, mkdirSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
-import { CodexLogs } from '../codex.js';
+import { CodexLogs, sessionTotals } from '../codex.js';
 import { createSystem } from '../system.js';
-import { event, execWith, missingShells, shells, temp } from './helpers.js';
+import { event, execWith, missingShells, shells, temp, totals, turn } from './helpers.js';
 
 for (const shell of missingShells) test(`${shell}: not on this machine`, { skip: true }, () => {});
 
@@ -51,6 +51,15 @@ for (const [shell, platform, remap] of shells) {
       first.tails.map(tail => tail.lines.length),
       [2],
     );
+
+    // The newest turn context comes with the usage lines, however many usage lines follow it.
+    const busy = join(day(home), 'busy.jsonl');
+    writeFileSync(busy, turn('/work/old', 'gpt-old') + turn('/work/api', 'gpt-6.2'));
+    for (let i = 0; i < 40; i++) appendFileSync(busy, totals('2026-11-16T03:00:00Z', 1000 + i, 900, 50));
+    const read = (await system.codexTails(new Map())).tails.find(tail => tail.path.endsWith('busy.jsonl'));
+    assert.equal(read.lines.length, 33);
+    assert.deepEqual([sessionTotals(read.lines).folder, sessionTotals(read.lines).input], ['/work/api', 139]);
+    rmSync(busy);
     const known = new Map(first.tails.map(tail => [tail.path, tail.size]));
     assert.deepEqual((await system.codexTails(known)).tails, [{ ...first.tails[0], lines: null }]);
     appendFileSync(log, event('2026-11-16T02:00:00Z', 29));

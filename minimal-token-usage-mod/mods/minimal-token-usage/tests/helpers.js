@@ -36,6 +36,20 @@ export function temp(t) {
   return dir;
 }
 
+/** A Codex usage event carrying the session's running token totals. */
+export const totals = (at, input, cached, output) =>
+  `${JSON.stringify({
+    timestamp: at,
+    type: 'event_msg',
+    payload: {
+      type: 'token_count',
+      info: { total_token_usage: { input_tokens: input, cached_input_tokens: cached, output_tokens: output } },
+      rate_limits: null,
+    },
+  })}\n`;
+export const turn = (cwd, model) =>
+  `${JSON.stringify({ timestamp: '2026-11-16T00:00:00Z', type: 'turn_context', payload: { cwd, model } })}\n`;
+
 export const event = (at, used, limits = {}) =>
   `${JSON.stringify({
     timestamp: at,

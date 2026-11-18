@@ -51,7 +51,6 @@ test('the latest window wins across sessions, which keep their transcript and mo
   );
   assert.deepEqual(limits.windows, { seven_day: { used: 41, resets: now / 1000 + 3600 } });
   assert.equal(limits.reportedAt, now - 30000);
-  assert.equal(limits.reports, 3);
   assert.deepEqual(limits.sessions.get('a'), { transcript: '/t/a.jsonl', model: 'Fable' });
   assert.deepEqual(limits.sessions.get('c'), { transcript: null, model: null });
 });

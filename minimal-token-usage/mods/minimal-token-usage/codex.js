@@ -2,6 +2,40 @@
 /** Never credentials or conversation content. */
 import { finite, object, parseJson } from './json.js';
 import { notInstalled } from './system.js';
+const eventOf = (line, type) => {
+    if (!line.includes(`"${type}"`))
+        return null;
+    const event = object(parseJson(line));
+    const payload = object(event?.payload);
+    const named = event?.type === type || (event?.type === 'event_msg' && payload?.type === type);
+    return event && payload && named ? { event, payload } : null;
+};
+/** A session's running totals are in its last usage event; its folder and model in its last turn context.
+ *  `lines` are in log order. Codex counts cached input inside input, so the two are told apart here. */
+export function sessionTotals(lines) {
+    let totals = null;
+    let context = null;
+    for (let i = lines.length - 1; i >= 0 && !(totals && context); i--) {
+        context ??= eventOf(lines[i], 'turn_context')?.payload ?? null;
+        if (totals)
+            continue;
+        const usage = eventOf(lines[i], 'token_count');
+        const total = object(object(usage?.payload.info)?.total_token_usage);
+        const at = typeof usage?.event.timestamp === 'string' ? Date.parse(usage.event.timestamp) : NaN;
+        if (!total || !finite(at))
+            continue;
+        const tokens = (key) => (finite(total[key]) && total[key] > 0 ? total[key] : 0);
+        const cacheRead = Math.min(tokens('cached_input_tokens'), tokens('input_tokens'));
+        totals = { at, cacheRead, input: tokens('input_tokens') - cacheRead, output: tokens('output_tokens') };
+    }
+    if (!totals)
+        return null;
+    return {
+        ...totals,
+        folder: typeof context?.cwd === 'string' && context.cwd ? context.cwd : null,
+        model: typeof context?.model === 'string' && context.model ? context.model : null,
+    };
+}
 export function usageEvent(line) {
     if (!line.includes('"token_count"'))
         return null;
@@ -53,18 +87,20 @@ export class CodexLogs {
     async read() {
         const result = await this.tails(new Map([...this.files].map(([path, file]) => [path, file.size])));
         if (!result)
-            return { samples: [], error: 'No Codex session logs found.' };
+            return { samples: [], sessions: [], error: 'No Codex session logs found.' };
         const files = new Map();
         const latest = new Map();
         let failures = result.failures;
         for (const tail of result.tails) {
-            const samples = tail.lines ? latestSamples(tail.lines) : this.files.get(tail.path)?.samples;
-            if (!samples) {
+            const file = tail.lines
+                ? { size: tail.size, samples: latestSamples(tail.lines), session: sessionTotals(tail.lines) }
+                : this.files.get(tail.path);
+            if (!file) {
                 failures++;
                 continue;
             }
-            files.set(tail.path, { size: tail.size, samples });
-            for (const sample of samples) {
+            files.set(tail.path, file);
+            for (const sample of file.samples) {
                 const newest = latest.get(sample.limit_id);
                 if (!newest || sample.at > newest.at)
                     latest.set(sample.limit_id, sample);
@@ -73,7 +109,10 @@ export class CodexLogs {
         this.files = files;
         const rank = (s) => (s.limit_id === 'codex' ? '0' : '1') + s.limit_id;
         const samples = [...latest.values()].sort((a, b) => (rank(a) < rank(b) ? -1 : rank(a) > rank(b) ? 1 : 0));
-        return { samples, error: failures ? `Could not read ${failures} session logs.` : null };
+        const sessions = [...files]
+            .flatMap(([path, file]) => (file.session ? [{ path, ...file.session }] : []))
+            .sort((a, b) => b.at - a.at);
+        return { samples, sessions, error: failures ? `Could not read ${failures} session logs.` : null };
     }
 }
 const UNDETERMINED = 'Could not check Codex sign-in. Run codex login status in a terminal.';

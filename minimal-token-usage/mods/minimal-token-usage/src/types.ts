@@ -13,10 +13,21 @@ export interface SessionRef {
   transcript: string | null;
   model: string | null;
 }
+/** Token totals of one session, as the provider's own log gives them. */
+export interface LoggedSession extends Tokens {
+  /** The log file: what tells one session from another. */
+  path: string;
+  /** The folder the session works in. */
+  folder: string | null;
+  /** When it last used tokens, in ms. */
+  at: number;
+}
 export interface UsageReport {
   windows: readonly UsageWindow[];
   sessions: ReadonlyMap<string, SessionRef>;
   reportedAt: number | null;
+  /** Sessions found in logs rather than in Herdr's terminals, newest first. */
+  logged?: readonly LoggedSession[];
 }
 export interface AccountContext {
   configDirectory?: string;
@@ -58,7 +69,6 @@ export interface ClaudeAuth {
 export interface ClaudeLimits {
   windows: Record<string, Limit>;
   sessions: Map<string, SessionRef>;
-  reports: number;
   reportedAt: number | null;
   /** `CLAUDE_CONFIG_DIR` of the session that reported last. Null when it had none or no report says:
    *  the account is then the one Herdr's own environment names. */

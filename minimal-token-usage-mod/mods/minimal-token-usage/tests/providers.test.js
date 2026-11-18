@@ -28,7 +28,7 @@ const sample = {
   at: now / 1000,
   windows: [{ ...window, key: 'primary', minutes: 10080 }],
 };
-const raw = { samples: [sample], error: null };
+const raw = { samples: [sample], sessions: [], error: null };
 const claudeAuth = { loggedIn: true, authMethod: 'claude.ai', email: 'test@example.test', subscriptionType: 'max' };
 
 function providers(overrides = {}) {
@@ -92,7 +92,11 @@ test('a Claude account is told apart by email and organization; a failed or miss
 
 test('limits are named by their period, and a limit beyond the plan’s own by its name too', async () => {
   assert.deepEqual([10080, 20160, 1440, 300, 90].map(periodLabel), ['Week', '14d', '1d', '5h', '90m']);
-  const named = codexReport({ samples: [sample, { ...sample, limit_id: 'spark', name: 'Spark' }], error: null });
+  const named = codexReport({
+    samples: [sample, { ...sample, limit_id: 'spark', name: 'Spark' }],
+    sessions: [],
+    error: null,
+  });
   assert.deepEqual(
     named.windows.map(w => [w.key, w.label]),
     [
@@ -100,9 +104,14 @@ test('limits are named by their period, and a limit beyond the plan’s own by i
       ['spark:primary', 'Spark · Week'],
     ],
   );
-  const unnamed = codexReport({ samples: [{ ...sample, limit_id: 'spark' }], error: null });
+  const unnamed = codexReport({ samples: [{ ...sample, limit_id: 'spark' }], sessions: [], error: null });
   assert.equal(unnamed.windows[0].label, 'spark · Week');
-  assert.deepEqual(codexReport({ samples: [], error: null }), { windows: [], reportedAt: null, sessions: new Map() });
+  assert.deepEqual(codexReport({ samples: [], sessions: [], error: null }), {
+    windows: [],
+    reportedAt: null,
+    sessions: new Map(),
+    logged: [],
+  });
 
   const windows = { five_hour: window, seven_day: window, spend_limit: window, monthly: window };
   const claude = await providers({ claudeUsage: async () => ({ windows }) }).claude.readUsage();

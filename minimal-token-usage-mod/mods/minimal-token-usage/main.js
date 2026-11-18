@@ -4,7 +4,7 @@ import { div, svg, View } from 'gpui-kit';
 import { agents, checking, closeOverlay, home, layout, nextCommand, notify, openOverlay, props, run, setShared, shared, spaces, theme, themes, } from 'herdr';
 import { claudeEnv, configDir, connect, disconnect, ensureDataDir, findTranscript, modelName, projectsDir, prune, sessionOf, system, Totals, tapPath, } from './data.js';
 import { usageStore } from './runtime.js';
-import { commonPeriod, litSegments, ownColors, PREFS_KEY, periodWidth, readPrefs, remainingPercent, remainingValue, resetLabel, rowNote, STRIP, STRIP_STYLES, stripHeight, stripOverflows, usageProviders, usageValue, } from './usage-model.js';
+import { commonPeriod, folderName, litSegments, ownColors, PREFS_KEY, periodWidth, readPrefs, recentSessions, remainingPercent, remainingValue, resetLabel, rowNote, STRIP, STRIP_STYLES, stripHeight, stripOverflows, usageProviders, usageValue, } from './usage-model.js';
 const ICON = (name) => `mods/minimal-token-usage/icons/${name}.svg`;
 const SESSIONS_EVERY = 5000;
 const PLANS = {
@@ -806,13 +806,42 @@ export default class ClaudeUsage extends View {
                 .when(i > 1, el => el.text_right())
             : div().flex_1().min_w(0)).child(label)));
         const dot = (status) => ({ working: t.working, blocked: t.blocked, done: t.done })[status] ?? t.idle;
-        const rows = (this.rows ?? []).map(r => h_flex()
-            .id(`cu-row-${r.address}`)
+        const line = (id) => h_flex().id(id).gap(8).py(8).border_t_1().border_color(t.border).text_size(12);
+        const totals = (model, tokens) => [
+            div()
+                .w(84)
+                .flex_none()
+                .truncate()
+                .text_color(t.muted)
+                .child(model || '--'),
+            div().w(64).flex_none().text_right().child(count(tokens.output)),
+            div().w(132).flex_none().text_right().child(count(tokens.input)),
+            div().w(80).flex_none().text_right().child(count(tokens.cacheRead)),
+        ];
+        const caption = (name, note) => h_flex()
             .gap(8)
-            .py(8)
-            .border_t_1()
-            .border_color(t.border)
-            .text_size(12)
+            .pt(10)
+            .pb(4)
+            .text_size(11)
+            .child(div().flex_1().font_medium().child(name))
+            .child(div().text_color(t.muted).child(note));
+        // Codex names no terminal for a session, so its rows come from its logs and open nothing.
+        const codexRows = recentSessions(this.store.usage.codex.value?.logged).map((s, i) => line(`cu-log-${i}`)
+            .child(h_flex()
+            .flex_1()
+            .min_w(0)
+            .gap(8)
+            .items_center()
+            .child(div().w(7).flex_none())
+            .child(div()
+            .truncate()
+            .child(folderName(s.folder) || 'Session'))
+            .child(div()
+            .flex_none()
+            .text_color(t.muted)
+            .child(ago(Date.now() - s.at))))
+            .children(totals(s.model ?? '', s)));
+        const rows = (this.rows ?? []).map(r => line(`cu-row-${r.address}`)
             .cursor_pointer()
             .hover(s => s.bg(t.hover))
             .on_click(() => {
@@ -827,15 +856,15 @@ export default class ClaudeUsage extends View {
             .child(div().w(7).h(7).rounded(4).flex_none().bg(dot(r.status)))
             .child(div().truncate().child(r.name))
             .child(div().truncate().text_color(t.muted).child(r.space)))
-            .child(div()
-            .w(84)
-            .flex_none()
-            .text_color(t.muted)
-            .child(r.model || '--'))
-            .child(div().w(64).flex_none().text_right().child(count(r.output)))
-            .child(div().w(132).flex_none().text_right().child(count(r.input)))
-            .child(div().w(80).flex_none().text_right().child(count(r.cacheRead))));
+            .children(totals(r.model ?? '', r)));
         const empty = this.rows == null ? 'Reading transcripts.' : 'No Claude Code sessions in Herdr on this computer.';
+        const note = (text, color) => div().py(8).text_size(12).text_color(color).child(text);
+        const listed = [
+            caption('Claude', rows.length ? 'Subagents included. Click a row to open its tab.' : ''),
+            ...(rows.length || this.rowsError ? rows : [note(empty, t.muted)]),
+            ...(this.rowsError ? [note(this.rowsError, t.blocked)] : []),
+            ...(codexRows.length ? [caption('Codex', 'From session logs of the last 24 hours.'), ...codexRows] : []),
+        ];
         return [
             this.usageOverview(t, this.providers(), true),
             ...(['unlinked', 'signedout'].includes(this.providers()[0].status)
@@ -851,23 +880,14 @@ export default class ClaudeUsage extends View {
             v_flex()
                 .flex_1()
                 .gap(4)
-                .child(h_flex()
-                .gap(12)
-                .items_center()
-                .child(div().flex_1().child(this.heading(t, 'Claude sessions on this computer')))
-                .when(Boolean(rows.length), el => el.child(div().text_size(11).text_color(t.muted).child('Subagents included. Click a row to open its tab.'))))
-                .when(Boolean(rows.length), el => el.child(div().pt(6).child(head)).child(v_flex()
+                .child(this.heading(t, 'Sessions on this computer'))
+                .child(div().pt(6).child(head))
+                .child(v_flex()
                 .id('cu-sessions')
                 .flex_1()
-                .min_h(Math.min(rows.length, 3) * 34)
+                .min_h(Math.min(listed.length, 4) * 34)
                 .overflow_y_scrollbar()
-                .children(rows)))
-                .when(!rows.length && !this.rowsError, el => el.child(div().py(8).text_size(12).text_color(t.muted).child(empty)))
-                .when(Boolean(this.rowsError), el => el.child(div()
-                .py(8)
-                .text_size(12)
-                .text_color(t.blocked)
-                .child(this.rowsError ?? ''))),
+                .children(listed)),
         ];
     }
     connectionSection(t) {
